@@ -194,8 +194,8 @@ CHART_LAYOUT = dict(
     font_family="DM Sans",
     paper_bgcolor="white", plot_bgcolor="white",
     margin=dict(l=10,r=10,t=36,b=10),
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
 )
+LEGEND_H = dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
 
 
 def kpi(label, value, delta="", color="blue"):
@@ -272,11 +272,12 @@ n_con_oc     = int(df["Tiene_OC"].sum())
 pct_ejec     = n_con_oc / total_items * 100 if total_items > 0 else 0
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 Resumen General",
     "🔢 ABC por Monto",
     "🔄 ABC por Cantidad + XYZ",
     "🏭 Proveedores",
+    "🏥 Detalle por Rubro",
     "📋 Datos",
 ])
 
@@ -316,6 +317,7 @@ with tab1:
         fig.update_traces(textposition="outside", textfont_size=10)
         fig.update_layout(**CHART_LAYOUT, height=460,
                           coloraxis_showscale=False,
+                          legend=LEGEND_H,
                           xaxis=dict(showgrid=False,visible=False),
                           yaxis=dict(tickfont_size=11))
         st.plotly_chart(fig, use_container_width=True)
@@ -335,6 +337,7 @@ with tab1:
                      name="Desiertos",   marker_color="#fb923c")
         fig2.update_layout(**CHART_LAYOUT, barmode="stack", height=460,
                            title="Ítems: Adjudicados vs Desiertos",
+                           legend=LEGEND_H,
                            xaxis=dict(tickangle=-40, tickfont_size=10),
                            yaxis=dict(title="Cantidad"))
         st.plotly_chart(fig2, use_container_width=True)
@@ -418,14 +421,16 @@ with tab2:
                           line=dict(color="#7c3aed", width=2))
         fig_p.add_hline(y=80, line_dash="dash", line_color="#dc2626",
                         annotation_text="80%", yref="y2")
-        fig_p.update_layout(
-            **CHART_LAYOUT, height=380, title="Curva de Pareto — Top 80 ítems por monto",
-            yaxis=dict(title="Monto ($)", showgrid=False),
-            yaxis2=dict(title="% Acumulado", overlaying="y", side="right",
-                        range=[0,105], ticksuffix="%"),
-            xaxis=dict(title="Ítem (rank)", showgrid=False),
-            legend=dict(orientation="h"),
-        )
+        layout_p = {**CHART_LAYOUT,
+            "height": 380,
+            "title": "Curva de Pareto — Top 80 ítems por monto",
+            "yaxis":  dict(title="Monto ($)", showgrid=False),
+            "yaxis2": dict(title="% Acumulado", overlaying="y", side="right",
+                           range=[0,105], ticksuffix="%"),
+            "xaxis":  dict(title="Ítem (rank)", showgrid=False),
+            "legend": dict(orientation="h"),
+        }
+        fig_p.update_layout(layout_p)
         st.plotly_chart(fig_p, use_container_width=True)
 
     with col_r:
@@ -616,14 +621,16 @@ with tab4:
             name="% Acum", line=dict(color="#7c3aed", width=2),
             xaxis="x2",
         )
-        fig_prov.update_layout(
-            **CHART_LAYOUT, height=500, title="Top 20 Proveedores por Monto",
-            xaxis=dict(title="Monto ($)", showgrid=False),
-            xaxis2=dict(title="% Acumulado", overlaying="x", side="top",
-                        range=[0,110], ticksuffix="%"),
-            yaxis=dict(tickfont_size=10, autorange="reversed"),
-            showlegend=False,
-        )
+        layout_prov = {**CHART_LAYOUT,
+            "height": 500,
+            "title": "Top 20 Proveedores por Monto",
+            "xaxis":  dict(title="Monto ($)", showgrid=False),
+            "xaxis2": dict(title="% Acumulado", overlaying="x", side="top",
+                           range=[0,110], ticksuffix="%"),
+            "yaxis":  dict(tickfont_size=10, autorange="reversed"),
+            "showlegend": False,
+        }
+        fig_prov.update_layout(layout_prov)
         st.plotly_chart(fig_prov, use_container_width=True)
 
     with col_r:
@@ -651,9 +658,332 @@ with tab4:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# TAB 5 — DATOS
+# TAB 5 — DETALLE POR RUBRO
 # ══════════════════════════════════════════════════════════════════════════════
 with tab5:
+
+    # ── Selector de rubro ────────────────────────────────────────────────────
+    rubros_disponibles = sorted(df["Rubro"].unique().tolist())
+    rubro_elegido = st.selectbox(
+        "Seleccioná un rubro para ver el análisis completo:",
+        rubros_disponibles,
+        key="rubro_sel_detalle",
+    )
+
+    df_r = df[df["Rubro"] == rubro_elegido].copy()
+    df_r_m = df_r[df_r["Monto"] > 0].copy()
+    if "M_abc" not in df_r_m.columns:
+        df_r_m = compute_abc(df_r_m, "Monto", "M")
+    if "Q_abc" not in df_r.columns:
+        df_r_q = compute_abc(df_r[df_r["Cantidad"] > 0].copy(), "Cantidad", "Q")
+    else:
+        df_r_q = df_r[df_r["Cantidad"] > 0].copy()
+
+    total_r       = len(df_r)
+    monto_r       = df_r["Monto"].sum()
+    des_r         = int(df_r["Es_Desierto"].sum())
+    oc_r          = int(df_r["Tiene_OC"].sum())
+    pct_ejec_r    = oc_r / total_r * 100 if total_r > 0 else 0
+    monto_oc_r    = df_r[df_r["Tiene_OC"]]["Monto"].sum()
+    monto_sin_oc  = monto_r - monto_oc_r
+
+    # ── KPIs del rubro ────────────────────────────────────────────────────────
+    st.markdown(f'<div class="section-header">📌 {rubro_elegido}</div>',
+                unsafe_allow_html=True)
+
+    k1, k2, k3, k4, k5, k6 = st.columns(6)
+    with k1: kpi("Total ítems",      f"{total_r}",            color="blue")
+    with k2: kpi("Monto justiprecio",f"${monto_r/1e6:.2f}M", color="green")
+    with k3: kpi("Con OC",           f"{oc_r}",
+                 f"{pct_ejec_r:.1f}% ejec.", color="purple")
+    with k4: kpi("Sin OC",           f"{total_r - oc_r}",    color="orange")
+    with k5: kpi("Desiertos",        f"{des_r}",
+                 f"{des_r/total_r*100:.1f}%" if total_r > 0 else "",  color="red")
+    with k6: kpi("Proveedores únicos",
+                 str(df_r[~df_r["Proveedor"].str.lower().isin(
+                     ["desierto","desierta","","nan"])]["Proveedor"].nunique()),
+                 color="blue")
+
+    st.markdown("---")
+
+    # ── Fila 1: Monto por proveedor + Ejecución ───────────────────────────────
+    c_l, c_r = st.columns(2)
+
+    with c_l:
+        st.markdown('<div class="section-header">Monto por proveedor</div>',
+                    unsafe_allow_html=True)
+        prov_r = (df_r[~df_r["Proveedor"].str.lower().isin(
+                        ["desierto","desierta","","nan"])]
+                  .groupby("Proveedor")
+                  .agg(Monto=("Monto","sum"), Items=("Descripcion","count"))
+                  .sort_values("Monto", ascending=True)
+                  .reset_index())
+
+        if len(prov_r) > 0:
+            fig_pr = px.bar(
+                prov_r, x="Monto", y="Proveedor", orientation="h",
+                color="Monto",
+                color_continuous_scale=[[0,"#bfdbfe"],[1,"#1d4ed8"]],
+                text=prov_r["Monto"].apply(lambda v: f"${v/1e6:.2f}M" if v >= 1e6 else f"${v:,.0f}"),
+                labels={"Monto":"","Proveedor":""},
+                height=max(250, len(prov_r) * 32),
+            )
+            fig_pr.update_traces(textposition="outside", textfont_size=10)
+            fig_pr.update_layout({**CHART_LAYOUT,
+                "coloraxis_showscale": False,
+                "xaxis": dict(showgrid=False, visible=False),
+                "yaxis": dict(tickfont_size=10),
+                "margin": dict(l=10, r=60, t=10, b=10),
+            })
+            st.plotly_chart(fig_pr, use_container_width=True)
+        else:
+            st.info("Sin proveedores adjudicados en este rubro.")
+
+    with c_r:
+        st.markdown('<div class="section-header">Ejecución presupuestal</div>',
+                    unsafe_allow_html=True)
+
+        # Donut ejecución
+        fig_ej = go.Figure(go.Pie(
+            labels=["Con OC", "Sin OC"],
+            values=[monto_oc_r, max(0, monto_sin_oc)],
+            hole=0.6,
+            marker_colors=["#16a34a", "#e2e8f0"],
+            textinfo="percent+label",
+            textfont_size=12,
+        ))
+        fig_ej.update_layout({**CHART_LAYOUT,
+            "height": 260,
+            "showlegend": False,
+            "annotations": [dict(
+                text=f"{pct_ejec_r:.0f}%<br><span style='font-size:11px'>ejecución</span>",
+                x=0.5, y=0.5, font_size=20, showarrow=False,
+            )],
+            "margin": dict(l=10, r=10, t=10, b=10),
+        })
+        st.plotly_chart(fig_ej, use_container_width=True)
+
+        # Barra adjudicados vs desiertos
+        fig_adj = go.Figure()
+        fig_adj.add_bar(name="Adjudicados", x=["Ítems"], y=[total_r - des_r],
+                        marker_color="#4ade80", text=[total_r - des_r],
+                        textposition="inside")
+        fig_adj.add_bar(name="Desiertos",   x=["Ítems"], y=[des_r],
+                        marker_color="#fb923c", text=[des_r],
+                        textposition="inside")
+        fig_adj.update_layout({**CHART_LAYOUT,
+            "barmode": "stack", "height": 110,
+            "showlegend": True,
+            "legend": dict(orientation="h", y=1.2),
+            "xaxis": dict(visible=False),
+            "yaxis": dict(visible=False),
+            "margin": dict(l=10, r=10, t=30, b=5),
+        })
+        st.plotly_chart(fig_adj, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Fila 2: ABC por monto + ABC por cantidad ───────────────────────────────
+    ca, cb = st.columns(2)
+
+    with ca:
+        st.markdown('<div class="section-header">ABC por monto — distribución</div>',
+                    unsafe_allow_html=True)
+        if len(df_r_m) > 0:
+            abc_r = (df_r_m.groupby("M_abc")
+                     .agg(Items=("Descripcion","count"), Monto=("Monto","sum"))
+                     .reindex(["A","B","C"]).fillna(0).reset_index())
+            fig_abc_pie = px.pie(
+                abc_r, names="M_abc", values="Monto",
+                color="M_abc", color_discrete_map=PALETTE,
+                hole=0.5, height=280,
+            )
+            fig_abc_pie.update_traces(textinfo="percent+label", textfont_size=12)
+            fig_abc_pie.update_layout({**CHART_LAYOUT,
+                "showlegend": False,
+                "margin": dict(l=10, r=10, t=10, b=10),
+            })
+            st.plotly_chart(fig_abc_pie, use_container_width=True)
+
+            # Tabla resumen ABC
+            abc_r["% Items"] = (abc_r["Items"] / abc_r["Items"].sum() * 100).apply(lambda v: f"{v:.1f}%")
+            abc_r["% Monto"] = (abc_r["Monto"] / abc_r["Monto"].sum() * 100).apply(lambda v: f"{v:.1f}%")
+            abc_r["Monto"]   = abc_r["Monto"].apply(lambda v: f"${v:,.0f}")
+            st.dataframe(
+                abc_r.rename(columns={"M_abc":"Clase","Items":"Ítems"}),
+                use_container_width=True, hide_index=True, height=140,
+            )
+
+    with cb:
+        st.markdown('<div class="section-header">ABC por cantidad — distribución</div>',
+                    unsafe_allow_html=True)
+        if len(df_r_q) > 0:
+            abc_q_r = (df_r_q.groupby("Q_abc")
+                       .agg(Items=("Descripcion","count"), Unidades=("Cantidad","sum"))
+                       .reindex(["A","B","C"]).fillna(0).reset_index())
+            fig_abcq_pie = px.pie(
+                abc_q_r, names="Q_abc", values="Unidades",
+                color="Q_abc", color_discrete_map=PALETTE,
+                hole=0.5, height=280,
+            )
+            fig_abcq_pie.update_traces(textinfo="percent+label", textfont_size=12)
+            fig_abcq_pie.update_layout({**CHART_LAYOUT,
+                "showlegend": False,
+                "margin": dict(l=10, r=10, t=10, b=10),
+            })
+            st.plotly_chart(fig_abcq_pie, use_container_width=True)
+
+            abc_q_r["% Items"]    = (abc_q_r["Items"] / abc_q_r["Items"].sum() * 100).apply(lambda v: f"{v:.1f}%")
+            abc_q_r["% Unidades"] = (abc_q_r["Unidades"] / abc_q_r["Unidades"].sum() * 100).apply(lambda v: f"{v:.1f}%")
+            abc_q_r["Unidades"]   = abc_q_r["Unidades"].apply(lambda v: f"{v:,.0f}")
+            st.dataframe(
+                abc_q_r.rename(columns={"Q_abc":"Clase","Items":"Ítems"}),
+                use_container_width=True, hide_index=True, height=140,
+            )
+
+    st.markdown("---")
+
+    # ── Fila 3: Curva de Pareto del rubro ────────────────────────────────────
+    st.markdown('<div class="section-header">Curva de Pareto — ítems del rubro ordenados por monto</div>',
+                unsafe_allow_html=True)
+
+    if len(df_r_m) > 0:
+        top_r = df_r_m.sort_values("Monto", ascending=False).reset_index(drop=True)
+        top_r["idx"] = range(1, len(top_r) + 1)
+        pct_acum_r = top_r["Monto"].cumsum() / top_r["Monto"].sum() * 100
+
+        fig_par = go.Figure()
+        fig_par.add_bar(
+            x=top_r["idx"], y=top_r["Monto"],
+            marker_color=top_r["M_abc"].map(PALETTE),
+            name="Monto",
+            hovertemplate="<b>%{customdata}</b><br>$%{y:,.0f}<extra></extra>",
+            customdata=top_r["Descripcion"].str[:50],
+        )
+        fig_par.add_scatter(
+            x=top_r["idx"], y=pct_acum_r, mode="lines",
+            yaxis="y2", name="% Acumulado",
+            line=dict(color="#7c3aed", width=2),
+        )
+        fig_par.add_hline(y=80, line_dash="dash", line_color="#dc2626",
+                          annotation_text="80%", yref="y2")
+        layout_par = {**CHART_LAYOUT,
+            "height": 340,
+            "yaxis":  dict(title="Monto ($)", showgrid=False),
+            "yaxis2": dict(overlaying="y", side="right", range=[0, 105],
+                           ticksuffix="%", title="% Acumulado"),
+            "xaxis":  dict(title="Ítem (rank)", showgrid=False),
+            "legend": dict(orientation="h"),
+        }
+        fig_par.update_layout(layout_par)
+        st.plotly_chart(fig_par, use_container_width=True)
+
+    st.markdown("---")
+
+    # ── Fila 4: Matriz ABC-XYZ del rubro ─────────────────────────────────────
+    st.markdown('<div class="section-header">Matriz ABC-XYZ del rubro</div>',
+                unsafe_allow_html=True)
+
+    strat_r = {
+        "AX": ("Stock alto · Proveedor fijo · Reposición continua",     "#dcfce7", "#16a34a"),
+        "AY": ("Stock buffer · Revisar mensual · Analizar causas",       "#fef9c3", "#b45309"),
+        "AZ": ("⚠ CRÍTICO: alto gasto + demanda errática",              "#fee2e2", "#dc2626"),
+        "BX": ("Stock normal · Control periódico",                       "#dcfce7", "#16a34a"),
+        "BY": ("Stock moderado · Revisar trimestral",                    "#fef9c3", "#b45309"),
+        "BZ": ("Stock mínimo · Analizar variabilidad",                   "#fef9c3", "#b45309"),
+        "CX": ("Stock bajo · Pedido por demanda",                        "#f0fdf4", "#15803d"),
+        "CY": ("Sin stock fijo · Control mínimo",                        "#f0fdf4", "#15803d"),
+        "CZ": ("Evaluar eliminar · Pedido esporádico",                   "#f8fafc", "#64748b"),
+    }
+
+    hdr_cols = st.columns(4)
+    hdr_cols[0].markdown("**ABC \\ XYZ**")
+    hdr_cols[1].markdown("**X — Estable**")
+    hdr_cols[2].markdown("**Y — Variable**")
+    hdr_cols[3].markdown("**Z — Irregular**")
+
+    for abc_cls in ["A", "B", "C"]:
+        row_c = st.columns(4)
+        row_c[0].markdown(f"**Clase {abc_cls}**")
+        for j, xyz_cls in enumerate(["X", "Y", "Z"]):
+            key = abc_cls + xyz_cls
+            sub_xyz = df_r_m[
+                (df_r_m.get("M_abc", pd.Series(dtype=str)) == abc_cls) &
+                (df_r_m["XYZ"] == xyz_cls)
+            ] if "M_abc" in df_r_m.columns else pd.DataFrame()
+            cnt_xyz   = len(sub_xyz)
+            monto_xyz = sub_xyz["Monto"].sum() if len(sub_xyz) > 0 else 0
+            txt, bg, fg = strat_r.get(key, ("", "#ffffff", "#000000"))
+            row_c[j+1].markdown(
+                f'<div style="background:{bg};border-radius:8px;padding:10px;'
+                f'text-align:center;border:1px solid #e2e8f0;font-size:.82rem;min-height:80px">'
+                f'<b style="font-size:1.1rem;color:{fg}">{cnt_xyz}</b>'
+                f'<span style="color:{fg}"> ítems</span><br>'
+                f'<span style="color:#64748b;font-size:.78rem">${monto_xyz/1e6:.2f}M</span><br>'
+                f'<span style="font-size:.70rem;color:#475569">{txt}</span></div>',
+                unsafe_allow_html=True,
+            )
+
+    st.markdown("---")
+
+    # ── Fila 5: Tabla completa del rubro con filtros ──────────────────────────
+    st.markdown('<div class="section-header">Todos los ítems del rubro</div>',
+                unsafe_allow_html=True)
+
+    fc1, fc2, fc3 = st.columns(3)
+    f_abc_r  = fc1.multiselect("Filtrar ABC", ["A","B","C"], default=["A","B","C"],
+                               key="f_abc_r")
+    f_xyz_r  = fc2.multiselect("Filtrar XYZ", ["X","Y","Z"], default=["X","Y","Z"],
+                               key="f_xyz_r")
+    f_des_r  = fc3.checkbox("Incluir desiertos", value=True, key="f_des_r")
+
+    df_tabla = df_r.copy()
+    if "M_abc" in df_tabla.columns:
+        df_tabla = df_tabla[df_tabla["M_abc"].isin(f_abc_r)]
+    df_tabla = df_tabla[df_tabla["XYZ"].isin(f_xyz_r)]
+    if not f_des_r:
+        df_tabla = df_tabla[~df_tabla["Es_Desierto"]]
+    df_tabla = df_tabla.sort_values("Monto", ascending=False)
+
+    st.caption(f"{len(df_tabla)} ítems · Monto total: ${df_tabla['Monto'].sum():,.0f}")
+
+    cols_tabla = ["M_abc","Q_abc","XYZ","Codigo","Descripcion",
+                  "Cantidad","Consumo_Mensual","Justiprecio","Monto",
+                  "Proveedor","Es_Desierto","Tiene_OC"]
+    cols_tabla = [c for c in cols_tabla if c in df_tabla.columns]
+
+    st.dataframe(
+        df_tabla[cols_tabla]
+        .rename(columns={
+            "M_abc":"ABC $","Q_abc":"ABC Ctd","Monto":"Monto ($)",
+            "Consumo_Mensual":"Consumo M.","Tiene_OC":"OC","Es_Desierto":"Des.",
+        })
+        .style.format({
+            "Monto ($)":    "${:,.0f}",
+            "Justiprecio":  "${:,.2f}",
+            "Cantidad":     "{:,.0f}",
+            "Consumo M.":   "{:,.0f}",
+        }),
+        use_container_width=True,
+        height=500,
+    )
+
+    # Descarga del rubro
+    buf_r = io.BytesIO()
+    df_tabla[cols_tabla].to_excel(buf_r, index=False)
+    st.download_button(
+        f"⬇ Descargar {rubro_elegido} como Excel",
+        data=buf_r.getvalue(),
+        file_name=f"rubro_{rubro_elegido.lower().replace(' ','_')}.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        key="dl_rubro",
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 6 — DATOS
+# ══════════════════════════════════════════════════════════════════════════════
+with tab6:
     st.markdown('<div class="section-header">Explorador de Datos</div>', unsafe_allow_html=True)
 
     c1, c2, c3 = st.columns(3)
