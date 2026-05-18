@@ -296,11 +296,127 @@ with tab1:
     st.markdown('<div class="section-header">Indicadores Globales</div>', unsafe_allow_html=True)
 
     c1, c2, c3, c4, c5 = st.columns(5)
-    with c1: kpi("Total Medicamentos",  f"{total_items:,}",    color="blue")
-    with c2: kpi("Monto Total Justiprecio", f"${total_monto/1e9:.2f}MM", f"{len(rubro_sel)} rubros", color="green")
-    with c3: kpi("Ítems Desiertos",     f"{n_desiertos:,}", f"{n_desiertos/total_items*100:.1f}% del total", color="orange")
-    with c4: kpi("Con OC Confirmada",   f"{n_con_oc:,}",    f"{pct_ejec:.1f}% ejecución", color="purple")
-    with c5: kpi("Sin OC (pendiente)",  f"{total_items-n_con_oc:,}", color="red")
+    with c1:
+        st.metric(
+            label="Total Medicamentos",
+            value=f"{total_items:,}",
+            help=(
+                "Cantidad total de renglones (medicamentos e insumos) "
+                "presentes en todas las hojas del archivo de Solicitudes 2026, "
+                "incluyendo adjudicados y desiertos."
+            ),
+        )
+    with c2:
+        st.metric(
+            label="Monto Total Justiprecio",
+            value=f"${total_monto/1e9:.2f}MM" if total_monto >= 1e9 else f"${total_monto/1e6:.2f}M",
+            delta=f"{len(rubro_sel)} rubros seleccionados",
+            help=(
+                "Suma del campo 'Monto Total Corregido s/Justiprecio' (columna AA) "
+                "de todas las hojas. Cuando ese campo está vacío o en cero, se calcula "
+                "como Cantidad solicitada × Justiprecio 2026 (columnas R × Y). "
+                "Representa el valor estimado del total a comprar usando el precio "
+                "de referencia (justiprecio), independientemente de si hay OC emitida."
+            ),
+        )
+    with c3:
+        st.metric(
+            label="Ítems Desiertos",
+            value=f"{n_desiertos:,}",
+            delta=f"{n_desiertos/total_items*100:.1f}% del total",
+            delta_color="inverse",
+            help=(
+                "Renglones donde el proveedor adjudicado figura como 'Desierto' "
+                "en la columna M (Proveedor). Incluye tanto los desiertos embebidos "
+                "en cada hoja de rubro como los de las hojas 'DESIERTOS' y "
+                "'ESTERILIZACION DESIERTOS'. Un ítem desierto significa que la "
+                "licitación no tuvo oferentes válidos para ese renglón."
+            ),
+        )
+    with c4:
+        st.metric(
+            label="Con OC Confirmada",
+            value=f"{n_con_oc:,}",
+            delta=f"{pct_ejec:.1f}% ejecución",
+            help=(
+                "Ítems que tienen un número de Orden de Compra registrado en "
+                "la columna P del archivo (columna 'OC'). Indica que la compra "
+                "fue formalizada y está en proceso de entrega o ya entregada. "
+                "El porcentaje de ejecución es: Ítems con OC ÷ Total ítems × 100."
+            ),
+        )
+    with c5:
+        st.metric(
+            label="Sin OC (pendiente)",
+            value=f"{total_items - n_con_oc:,}",
+            delta=f"{(total_items-n_con_oc)/total_items*100:.1f}% pendiente",
+            delta_color="inverse",
+            help=(
+                "Ítems adjudicados que aún no tienen Orden de Compra emitida. "
+                "Son los renglones donde la columna P está vacía. Representa "
+                "el presupuesto comprometido pero todavía no formalizado en una OC."
+            ),
+        )
+
+    # Segunda fila: indicadores monetarios de ejecución
+    monto_con_oc  = df[df["Tiene_OC"]]["Monto"].sum()
+    monto_sin_oc  = total_monto - monto_con_oc
+    pct_ejec_monto = monto_con_oc / total_monto * 100 if total_monto > 0 else 0
+    n_des_total    = n_desiertos
+    monto_desierto = df[df["Es_Desierto"]]["Monto"].sum()
+
+    st.markdown("---")
+    m1, m2, m3, m4 = st.columns(4)
+    with m1:
+        st.metric(
+            label="Monto con OC confirmada",
+            value=f"${monto_con_oc/1e9:.2f}MM" if monto_con_oc >= 1e9 else f"${monto_con_oc/1e6:.1f}M",
+            delta=f"{pct_ejec_monto:.1f}% del presupuesto total",
+            help=(
+                "Suma del monto justiprecio de todos los ítems que tienen "
+                "Orden de Compra emitida (columna P no vacía). "
+                "Indica el valor monetario ya formalizado en OC, "
+                "es decir, el presupuesto efectivamente ejecutado."
+            ),
+        )
+    with m2:
+        st.metric(
+            label="Monto sin OC (pendiente)",
+            value=f"${monto_sin_oc/1e9:.2f}MM" if monto_sin_oc >= 1e9 else f"${monto_sin_oc/1e6:.1f}M",
+            delta=f"{100-pct_ejec_monto:.1f}% aún no formalizado",
+            delta_color="inverse",
+            help=(
+                "Monto justiprecio de ítems adjudicados pero sin OC emitida aún. "
+                "Representa el presupuesto comprometido que todavía está pendiente "
+                "de formalizar. Calculado como: Monto Total − Monto con OC."
+            ),
+        )
+    with m3:
+        st.metric(
+            label="% Ejecución monetaria",
+            value=f"{pct_ejec_monto:.1f}%",
+            help=(
+                "Porcentaje del presupuesto total que ya tiene OC emitida. "
+                "Se calcula como: Monto con OC ÷ Monto Total Justiprecio × 100. "
+                "Diferente al % de ejecución por ítems: aquí se pondera por "
+                "el valor económico de cada renglón, no solo por cantidad."
+            ),
+        )
+    with m4:
+        st.metric(
+            label="Monto estimado desiertos",
+            value=f"${monto_desierto/1e9:.2f}MM" if monto_desierto >= 1e9 else f"${monto_desierto/1e6:.1f}M",
+            delta=f"{monto_desierto/total_monto*100:.1f}% del presupuesto",
+            delta_color="inverse",
+            help=(
+                "Valor estimado de los renglones declarados desiertos "
+                "(calculado como Cantidad × Justiprecio cuando está disponible). "
+                "Representa el presupuesto en riesgo por falta de oferentes. "
+                "Este monto no tiene proveedor asignado y requiere re-licitación "
+                "o compra directa para garantizar el abastecimiento."
+            ),
+        )
+    st.markdown("---")
 
     st.markdown('<div class="section-header" style="margin-top:20px">Monto por Rubro</div>', unsafe_allow_html=True)
 
@@ -342,13 +458,18 @@ with tab1:
                      name="Adjudicados", marker_color="#4ade80")
         fig2.add_bar(x=des_agg["Rubro"], y=des_agg["Desiertos"],
                      name="Desiertos",   marker_color="#fb923c")
-        fig2.update_layout(**CHART_LAYOUT, barmode="stack", height=460,
-                           title="Ítems: Adjudicados vs Desiertos",
-                           legend=LEGEND_H,
+        fig2.update_layout(**CHART_LAYOUT, barmode="stack", height=480,
+                           title=dict(text="Ítems: Adjudicados vs Desiertos",
+                                      y=0.97, yanchor="top"),
+                           legend=dict(orientation="h", x=0.5, xanchor="center",
+                                       y=1.08, yanchor="bottom",
+                                       font=dict(color="#e2e8f0")),
+                           margin=dict(l=10, r=10, t=80, b=120),
                            xaxis=dict(tickangle=-40,
                                       tickfont=dict(size=10, color="#e2e8f0")),
                            yaxis=dict(title="Cantidad",
-                                      tickfont=dict(color="#e2e8f0")))
+                                      tickfont=dict(color="#e2e8f0"),
+                                      gridcolor="rgba(255,255,255,0.08)"))
         st.plotly_chart(fig2, use_container_width=True)
 
     # Execution donut
