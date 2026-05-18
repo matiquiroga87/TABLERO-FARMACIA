@@ -25,50 +25,54 @@ st.markdown("""
 
 html, body, [class*="css"] { font-family: 'DM Sans', sans-serif; }
 
-.main { background: #f0f4f8; }
-
+/* ── Metric cards — adaptan a claro/oscuro ── */
 .metric-card {
-    background: white;
+    background: rgba(255,255,255,0.06);
     border-radius: 12px;
-    padding: 20px 24px;
-    border-left: 4px solid #2563eb;
-    box-shadow: 0 1px 3px rgba(0,0,0,.08);
+    padding: 18px 22px;
+    border-left: 4px solid #3b82f6;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-left: 4px solid #3b82f6;
     margin-bottom: 12px;
 }
-.metric-card.green  { border-left-color: #16a34a; }
-.metric-card.orange { border-left-color: #ea580c; }
-.metric-card.red    { border-left-color: #dc2626; }
-.metric-card.purple { border-left-color: #7c3aed; }
-.metric-card .value { font-size: 2rem; font-weight: 700; color: #1e293b; line-height:1.1; }
-.metric-card .label { font-size: .78rem; font-weight: 500; color: #64748b; text-transform: uppercase; letter-spacing:.05em; margin-bottom:4px; }
-.metric-card .delta { font-size: .82rem; color: #64748b; margin-top: 4px; }
+.metric-card.green  { border-left-color: #22c55e; }
+.metric-card.orange { border-left-color: #f97316; }
+.metric-card.red    { border-left-color: #ef4444; }
+.metric-card.purple { border-left-color: #a855f7; }
 
+.metric-card .value {
+    font-size: 1.9rem; font-weight: 700; line-height: 1.1;
+    color: inherit;
+}
+.metric-card .label {
+    font-size: .75rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .06em;
+    margin-bottom: 4px; opacity: .65;
+}
+.metric-card .delta {
+    font-size: .8rem; margin-top: 4px; opacity: .6;
+}
+
+/* ── Section headers ── */
 .section-header {
-    font-size: 1.05rem; font-weight: 600; color: #1e293b;
-    padding: 10px 0 6px; border-bottom: 2px solid #e2e8f0; margin-bottom: 14px;
+    font-size: 1rem; font-weight: 600;
+    padding: 8px 0 6px;
+    border-bottom: 2px solid rgba(255,255,255,0.15);
+    margin-bottom: 14px;
 }
 
-.badge {
-    display: inline-block; padding: 2px 10px; border-radius: 999px;
-    font-size: .75rem; font-weight: 600; margin: 2px;
-}
-.badge-green  { background:#dcfce7; color:#16a34a; }
-.badge-yellow { background:#fef9c3; color:#b45309; }
-.badge-red    { background:#fee2e2; color:#dc2626; }
-.badge-blue   { background:#dbeafe; color:#1d4ed8; }
-
-div[data-testid="stSidebar"] { background: #1e293b; }
-div[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
-div[data-testid="stSidebar"] .stSelectbox label,
-div[data-testid="stSidebar"] .stFileUploader label { color: #94a3b8 !important; font-size:.8rem; }
-
+/* ── Upload prompt ── */
 .upload-prompt {
-    background: white; border-radius: 16px; padding: 60px 40px;
-    text-align: center; border: 2px dashed #cbd5e1;
-    box-shadow: 0 4px 24px rgba(0,0,0,.06);
+    border-radius: 16px; padding: 60px 40px;
+    text-align: center;
+    border: 2px dashed rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.04);
 }
-.upload-prompt h2 { color: #1e293b; font-size: 1.6rem; margin-bottom: 8px; }
-.upload-prompt p  { color: #64748b; font-size: .95rem; }
+.upload-prompt h2 { font-size: 1.6rem; margin-bottom: 8px; }
+.upload-prompt p  { font-size: .95rem; opacity: .7; }
+
+/* ── Sidebar ── */
+div[data-testid="stSidebar"] { background: #0f172a; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -192,10 +196,13 @@ PALETTE = {
 }
 CHART_LAYOUT = dict(
     font_family="DM Sans",
-    paper_bgcolor="white", plot_bgcolor="white",
-    margin=dict(l=10,r=10,t=36,b=10),
+    font_color="#e2e8f0",
+    paper_bgcolor="rgba(0,0,0,0)",
+    plot_bgcolor="rgba(0,0,0,0)",
+    margin=dict(l=10, r=10, t=36, b=10),
 )
-LEGEND_H = dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+LEGEND_H = dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1,
+                font=dict(color="#e2e8f0"))
 
 
 def kpi(label, value, delta="", color="blue"):
@@ -309,17 +316,17 @@ with tab1:
         fig = px.bar(
             rubro_agg, x="Monto", y="Rubro", orientation="h",
             color="Monto",
-            color_continuous_scale=[[0,"#bfdbfe"],[1,"#1d4ed8"]],
+            color_continuous_scale=[[0,"#60a5fa"],[1,"#1d4ed8"]],
             text=rubro_agg["Monto"].apply(lambda v: f"${v/1e6:.1f}M"),
             labels={"Monto":"Monto ($)","Rubro":""},
             title="Monto Justiprecio por Rubro",
         )
-        fig.update_traces(textposition="outside", textfont_size=10)
+        fig.update_traces(textposition="outside", textfont_size=10, textfont_color="#e2e8f0")
         fig.update_layout(**CHART_LAYOUT, height=460,
                           coloraxis_showscale=False,
                           legend=LEGEND_H,
-                          xaxis=dict(showgrid=False,visible=False),
-                          yaxis=dict(tickfont_size=11))
+                          xaxis=dict(showgrid=False, visible=False),
+                          yaxis=dict(tickfont=dict(size=11, color="#e2e8f0")))
         st.plotly_chart(fig, use_container_width=True)
 
     with col_r:
@@ -338,8 +345,10 @@ with tab1:
         fig2.update_layout(**CHART_LAYOUT, barmode="stack", height=460,
                            title="Ítems: Adjudicados vs Desiertos",
                            legend=LEGEND_H,
-                           xaxis=dict(tickangle=-40, tickfont_size=10),
-                           yaxis=dict(title="Cantidad"))
+                           xaxis=dict(tickangle=-40,
+                                      tickfont=dict(size=10, color="#e2e8f0")),
+                           yaxis=dict(title="Cantidad",
+                                      tickfont=dict(color="#e2e8f0")))
         st.plotly_chart(fig2, use_container_width=True)
 
     # Execution donut
@@ -362,11 +371,12 @@ with tab1:
         text=ejec_rubro["Pct_Ejec"].apply(lambda v: f"{v:.0f}%"),
         title="% Ejecución Presupuestal por Rubro (Monto con OC / Monto Total)",
     )
-    fig3.update_traces(textposition="outside", textfont_size=10)
+    fig3.update_traces(textposition="outside", textfont_size=10, textfont_color="#e2e8f0")
     fig3.update_layout(**CHART_LAYOUT, height=420, coloraxis_showscale=False,
                        xaxis=dict(range=[0,115], title="% Ejecución", showgrid=True,
-                                  gridcolor="#f1f5f9"),
-                       yaxis=dict(tickfont_size=11))
+                                  gridcolor="rgba(255,255,255,0.12)",
+                                  tickfont=dict(color="#e2e8f0")),
+                       yaxis=dict(tickfont=dict(size=11, color="#e2e8f0")))
     fig3.add_vline(x=80, line_dash="dash", line_color="#dc2626",
                    annotation_text="80%", annotation_position="top right")
     st.plotly_chart(fig3, use_container_width=True)
@@ -424,11 +434,14 @@ with tab2:
         layout_p = {**CHART_LAYOUT,
             "height": 380,
             "title": "Curva de Pareto — Top 80 ítems por monto",
-            "yaxis":  dict(title="Monto ($)", showgrid=False),
+            "yaxis":  dict(title="Monto ($)", showgrid=False,
+                           tickfont=dict(color="#e2e8f0")),
             "yaxis2": dict(title="% Acumulado", overlaying="y", side="right",
-                           range=[0,105], ticksuffix="%"),
-            "xaxis":  dict(title="Ítem (rank)", showgrid=False),
-            "legend": dict(orientation="h"),
+                           range=[0,105], ticksuffix="%",
+                           tickfont=dict(color="#e2e8f0")),
+            "xaxis":  dict(title="Ítem (rank)", showgrid=False,
+                           tickfont=dict(color="#e2e8f0")),
+            "legend": dict(orientation="h", font=dict(color="#e2e8f0")),
         }
         fig_p.update_layout(layout_p)
         st.plotly_chart(fig_p, use_container_width=True)
@@ -498,14 +511,16 @@ with tab3:
         xyz_sum = (df.groupby("XYZ")
                    .agg(Items=("Descripcion","count"), Monto=("Monto","sum"))
                    .reset_index())
-        xyz_color = {"X":"#2563eb","Y":"#f59e0b","Z":"#94a3b8"}
+        xyz_color = {"X":"#34d399","Y":"#fbbf24","Z":"#94a3b8"}
         fig_xyz = px.bar(xyz_sum, x="XYZ", y="Items",
                          color="XYZ", color_discrete_map=xyz_color,
                          text="Items", title="Ítems por Clase XYZ")
-        fig_xyz.update_traces(textposition="outside")
+        fig_xyz.update_traces(textposition="outside", textfont_color="#e2e8f0")
         fig_xyz.update_layout(**CHART_LAYOUT, height=200,
                               showlegend=False, xaxis_title="", yaxis_title="Ítems",
-                              yaxis=dict(showgrid=False))
+                              xaxis=dict(tickfont=dict(color="#e2e8f0", size=13)),
+                              yaxis=dict(showgrid=False,
+                                         tickfont=dict(color="#e2e8f0")))
         st.plotly_chart(fig_xyz, use_container_width=True)
 
         xyz_desc = {
@@ -609,25 +624,28 @@ with tab4:
         fig_prov.add_bar(
             x=top20["Monto"], y=top20["Proveedor"], orientation="h",
             marker_color=top20["Pct"].apply(
-                lambda v: "#dc2626" if v>=20 else ("#f97316" if v>=10 else ("#f59e0b" if v>=5 else "#4ade80"))),
+                lambda v: "#ef4444" if v>=20 else ("#f97316" if v>=10 else ("#fbbf24" if v>=5 else "#34d399"))),
             text=top20["Pct"].apply(lambda v: f"{v:.1f}%"),
             textposition="outside",
+            textfont=dict(color="#e2e8f0", size=11),
             hovertemplate="<b>%{y}</b><br>$%{x:,.0f}<extra></extra>",
         )
-        # Pareto line
         fig_prov.add_scatter(
             x=top20["Pct_Acum"]/100 * top20["Monto"].max(),
             y=top20["Proveedor"], mode="lines+markers",
-            name="% Acum", line=dict(color="#7c3aed", width=2),
+            name="% Acum", line=dict(color="#c084fc", width=2),
             xaxis="x2",
         )
         layout_prov = {**CHART_LAYOUT,
             "height": 500,
             "title": "Top 20 Proveedores por Monto",
-            "xaxis":  dict(title="Monto ($)", showgrid=False),
+            "xaxis":  dict(title="Monto ($)", showgrid=False,
+                           tickfont=dict(color="#cbd5e1")),
             "xaxis2": dict(title="% Acumulado", overlaying="x", side="top",
-                           range=[0,110], ticksuffix="%"),
-            "yaxis":  dict(tickfont_size=10, autorange="reversed"),
+                           range=[0,110], ticksuffix="%",
+                           tickfont=dict(color="#cbd5e1")),
+            "yaxis":  dict(tickfont=dict(size=11, color="#e2e8f0"),
+                           autorange="reversed"),
             "showlegend": False,
         }
         fig_prov.update_layout(layout_prov)
@@ -643,7 +661,7 @@ with tab4:
         fig_pie2 = px.pie(pie_data, names="Proveedor", values="Monto",
                           hole=0.45, title="Top 5 vs Resto",
                           color_discrete_sequence=px.colors.qualitative.Bold)
-        fig_pie2.update_traces(textinfo="percent+label", textfont_size=11)
+        fig_pie2.update_traces(textinfo="percent+label", textfont_size=11, textfont_color="#1e293b")
         fig_pie2.update_layout(**CHART_LAYOUT, height=500, showlegend=False)
         st.plotly_chart(fig_pie2, use_container_width=True)
 
@@ -723,16 +741,16 @@ with tab5:
             fig_pr = px.bar(
                 prov_r, x="Monto", y="Proveedor", orientation="h",
                 color="Monto",
-                color_continuous_scale=[[0,"#bfdbfe"],[1,"#1d4ed8"]],
+                color_continuous_scale=[[0,"#60a5fa"],[1,"#1d4ed8"]],
                 text=prov_r["Monto"].apply(lambda v: f"${v/1e6:.2f}M" if v >= 1e6 else f"${v:,.0f}"),
                 labels={"Monto":"","Proveedor":""},
                 height=max(250, len(prov_r) * 32),
             )
-            fig_pr.update_traces(textposition="outside", textfont_size=10)
+            fig_pr.update_traces(textposition="outside", textfont_size=10, textfont_color="#e2e8f0")
             fig_pr.update_layout({**CHART_LAYOUT,
                 "coloraxis_showscale": False,
                 "xaxis": dict(showgrid=False, visible=False),
-                "yaxis": dict(tickfont_size=10),
+                "yaxis": dict(tickfont=dict(size=11, color="#e2e8f0")),
                 "margin": dict(l=10, r=60, t=10, b=10),
             })
             st.plotly_chart(fig_pr, use_container_width=True)
