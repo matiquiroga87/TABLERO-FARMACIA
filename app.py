@@ -273,10 +273,17 @@ if not show_desiertos:
     df = df[~df["Es_Desierto"]]
 
 total_monto  = df["Monto"].sum()
-total_items  = len(df)
 n_desiertos  = int(df["Es_Desierto"].sum())
 n_con_oc     = int(df["Tiene_OC"].sum())
-pct_ejec     = n_con_oc / total_items * 100 if total_items > 0 else 0
+
+# Total medicamentos únicos: deduplicar por Codigo vademecum (cuando existe)
+# y por Descripcion para los que no tienen código asignado
+_df_con_cod = df[df["Codigo"] != ""].drop_duplicates(subset=["Codigo"])
+_df_sin_cod = df[df["Codigo"] == ""].drop_duplicates(subset=["Descripcion"])
+total_items  = len(_df_con_cod) + len(_df_sin_cod)
+total_items_raw = len(df)  # con repetidos, para % internos
+
+pct_ejec     = n_con_oc / total_items_raw * 100 if total_items_raw > 0 else 0
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
@@ -300,10 +307,14 @@ with tab1:
         st.metric(
             label="Total Medicamentos",
             value=f"{total_items:,}",
+            delta=f"{total_items_raw - total_items:,} duplicados excluidos",
             help=(
-                "Cantidad total de renglones (medicamentos e insumos) "
-                "presentes en todas las hojas del archivo de Solicitudes 2026, "
-                "incluyendo adjudicados y desiertos."
+                f"Medicamentos e insumos **únicos** en el archivo. "
+                f"Se deduplicó por código vademecum (columna A): si el mismo código "
+                f"aparece en más de un rubro, se cuenta una sola vez. "
+                f"Para los {len(_df_sin_cod)} ítems sin código, se deduplicó por descripción. "
+                f"Total de renglones originales (con repetidos): {total_items_raw:,}. "
+                f"Duplicados eliminados: {total_items_raw - total_items:,}."
             ),
         )
     with c2:
@@ -323,7 +334,7 @@ with tab1:
         st.metric(
             label="Ítems Desiertos",
             value=f"{n_desiertos:,}",
-            delta=f"{n_desiertos/total_items*100:.1f}% del total",
+            delta=f"{n_desiertos/total_items_raw*100:.1f}% del total de renglones",
             delta_color="inverse",
             help=(
                 "Renglones donde el proveedor adjudicado figura como 'Desierto' "
@@ -348,8 +359,8 @@ with tab1:
     with c5:
         st.metric(
             label="Sin OC (pendiente)",
-            value=f"{total_items - n_con_oc:,}",
-            delta=f"{(total_items-n_con_oc)/total_items*100:.1f}% pendiente",
+            value=f"{total_items_raw - n_con_oc:,}",
+            delta=f"{(total_items_raw-n_con_oc)/total_items_raw*100:.1f}% pendiente",
             delta_color="inverse",
             help=(
                 "Ítems adjudicados que aún no tienen Orden de Compra emitida. "
@@ -438,11 +449,11 @@ with tab1:
             title="Monto Justiprecio por Rubro",
         )
         fig.update_traces(textposition="outside", textfont_size=10, textfont_color="#e2e8f0")
-        fig.update_layout(**CHART_LAYOUT, height=460,
-                          coloraxis_showscale=False,
-                          legend=LEGEND_H,
-                          xaxis=dict(showgrid=False, visible=False),
-                          yaxis=dict(tickfont=dict(size=11, color="#e2e8f0")))
+        fig.update_layout({**CHART_LAYOUT,
+            "height": 460, "coloraxis_showscale": False, "legend": LEGEND_H,
+            "xaxis": dict(showgrid=False, visible=False),
+            "yaxis": dict(tickfont=dict(size=11, color="#e2e8f0")),
+        })
         st.plotly_chart(fig, use_container_width=True)
 
     with col_r:
@@ -458,18 +469,21 @@ with tab1:
                      name="Adjudicados", marker_color="#4ade80")
         fig2.add_bar(x=des_agg["Rubro"], y=des_agg["Desiertos"],
                      name="Desiertos",   marker_color="#fb923c")
-        fig2.update_layout(**CHART_LAYOUT, barmode="stack", height=480,
-                           title=dict(text="Ítems: Adjudicados vs Desiertos",
-                                      y=0.97, yanchor="top"),
-                           legend=dict(orientation="h", x=0.5, xanchor="center",
-                                       y=1.08, yanchor="bottom",
-                                       font=dict(color="#e2e8f0")),
-                           margin=dict(l=10, r=10, t=80, b=120),
-                           xaxis=dict(tickangle=-40,
-                                      tickfont=dict(size=10, color="#e2e8f0")),
-                           yaxis=dict(title="Cantidad",
-                                      tickfont=dict(color="#e2e8f0"),
-                                      gridcolor="rgba(255,255,255,0.08)"))
+        fig2.update_layout({**CHART_LAYOUT,
+            "barmode":  "stack",
+            "height":   480,
+            "title":    dict(text="Ítems: Adjudicados vs Desiertos",
+                             y=0.97, yanchor="top"),
+            "legend":   dict(orientation="h", x=0.5, xanchor="center",
+                             y=1.08, yanchor="bottom",
+                             font=dict(color="#e2e8f0")),
+            "margin":   dict(l=10, r=10, t=80, b=120),
+            "xaxis":    dict(tickangle=-40,
+                             tickfont=dict(size=10, color="#e2e8f0")),
+            "yaxis":    dict(title="Cantidad",
+                             tickfont=dict(color="#e2e8f0"),
+                             gridcolor="rgba(255,255,255,0.08)"),
+        })
         st.plotly_chart(fig2, use_container_width=True)
 
     # Execution donut
@@ -493,11 +507,13 @@ with tab1:
         title="% Ejecución Presupuestal por Rubro (Monto con OC / Monto Total)",
     )
     fig3.update_traces(textposition="outside", textfont_size=10, textfont_color="#e2e8f0")
-    fig3.update_layout(**CHART_LAYOUT, height=420, coloraxis_showscale=False,
-                       xaxis=dict(range=[0,115], title="% Ejecución", showgrid=True,
-                                  gridcolor="rgba(255,255,255,0.12)",
-                                  tickfont=dict(color="#e2e8f0")),
-                       yaxis=dict(tickfont=dict(size=11, color="#e2e8f0")))
+    fig3.update_layout({**CHART_LAYOUT,
+        "height": 420, "coloraxis_showscale": False,
+        "xaxis": dict(range=[0,115], title="% Ejecución", showgrid=True,
+                      gridcolor="rgba(255,255,255,0.12)",
+                      tickfont=dict(color="#e2e8f0")),
+        "yaxis": dict(tickfont=dict(size=11, color="#e2e8f0")),
+    })
     fig3.add_vline(x=80, line_dash="dash", line_color="#dc2626",
                    annotation_text="80%", annotation_position="top right")
     st.plotly_chart(fig3, use_container_width=True)
@@ -576,8 +592,7 @@ with tab2:
             title="Distribución por Monto",
         )
         fig_pie.update_traces(textinfo="percent+label", textfont_size=13)
-        fig_pie.update_layout(**CHART_LAYOUT, height=380,
-                              showlegend=False)
+        fig_pie.update_layout({**CHART_LAYOUT, "height": 380, "showlegend": False})
         st.plotly_chart(fig_pie, use_container_width=True)
 
     # Top 30 table
@@ -615,7 +630,7 @@ with tab3:
                           color="Q_abc", color_discrete_map=PALETTE,
                           hole=0.5, title="Unidades por Clase ABC")
         fig_qpie.update_traces(textinfo="percent+label")
-        fig_qpie.update_layout(**CHART_LAYOUT, height=320, showlegend=False)
+        fig_qpie.update_layout({**CHART_LAYOUT, "height": 320, "showlegend": False})
         st.plotly_chart(fig_qpie, use_container_width=True)
 
         st.dataframe(
@@ -637,11 +652,12 @@ with tab3:
                          color="XYZ", color_discrete_map=xyz_color,
                          text="Items", title="Ítems por Clase XYZ")
         fig_xyz.update_traces(textposition="outside", textfont_color="#e2e8f0")
-        fig_xyz.update_layout(**CHART_LAYOUT, height=200,
-                              showlegend=False, xaxis_title="", yaxis_title="Ítems",
-                              xaxis=dict(tickfont=dict(color="#e2e8f0", size=13)),
-                              yaxis=dict(showgrid=False,
-                                         tickfont=dict(color="#e2e8f0")))
+        fig_xyz.update_layout({**CHART_LAYOUT,
+            "height": 200, "showlegend": False,
+            "xaxis_title": "", "yaxis_title": "Ítems",
+            "xaxis": dict(tickfont=dict(color="#e2e8f0", size=13)),
+            "yaxis": dict(showgrid=False, tickfont=dict(color="#e2e8f0")),
+        })
         st.plotly_chart(fig_xyz, use_container_width=True)
 
         xyz_desc = {
@@ -783,7 +799,7 @@ with tab4:
                           hole=0.45, title="Top 5 vs Resto",
                           color_discrete_sequence=px.colors.qualitative.Bold)
         fig_pie2.update_traces(textinfo="percent+label", textfont_size=11, textfont_color="#1e293b")
-        fig_pie2.update_layout(**CHART_LAYOUT, height=500, showlegend=False)
+        fig_pie2.update_layout({**CHART_LAYOUT, "height": 500, "showlegend": False})
         st.plotly_chart(fig_pie2, use_container_width=True)
 
     st.markdown('<div class="section-header">Detalle de Proveedores</div>', unsafe_allow_html=True)
