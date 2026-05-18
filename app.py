@@ -91,8 +91,14 @@ RUBROS_CFG = [
 ]
 
 RUBRO_COL = {
-    "VARIOS": {"cm":"Y","cq":"R","cj":"W","cp":"M"},
-    "DEFAULT":{"cm":"AA","cq":"R","cj":"Y","cp":"M"},
+    # VARIOS: columna desplazada (una col menos en historial)
+    # consumo=idx4(E), qty=idx17(R), justi=idx22(W), monto=idx24(Y), prov=idx12(M)
+    "VARIOS":  {"consumo":4, "cm":24, "cq":17, "cj":22, "cp":12},
+    # ESTERILIZACION y ESTERILIZACION DESIERTOS: consumo en idx4(E) por columna corrida
+    "ESTERILIZACION":          {"consumo":4, "cm":25, "cq":17, "cj":23, "cp":12},
+    "ESTERILIZACION DESIERTOS":{"consumo":4, "cm":25, "cq":17, "cj":23, "cp":12},
+    # Resto de hojas: consumo=idx5(F), justi=idx23(X), monto=idx25(Z)
+    "DEFAULT": {"consumo":5, "cm":25, "cq":17, "cj":23, "cp":12},
 }
 
 
@@ -107,11 +113,12 @@ def load_solicitudes(file_bytes):
         if sheet_name not in xl.sheet_names:
             continue
         df = xl.parse(sheet_name, header=None)
-        cfg = RUBRO_COL.get(sheet_name, RUBRO_COL["DEFAULT"])
-        cm_i = {"AA":26,"Y":24}[cfg["cm"]]
-        cq_i = ord(cfg["cq"])-65
-        cj_i = {"Y":24,"W":22}.get(cfg["cj"], ord(cfg["cj"])-65)
-        cp_i = ord(cfg["cp"])-65
+        cfg    = RUBRO_COL.get(sheet_name, RUBRO_COL["DEFAULT"])
+        cm_i   = cfg["cm"]        # Monto Total pedido s/Justiprecio
+        cq_i   = cfg["cq"]        # Cantidad pedida 1er sem 2026
+        cj_i   = cfg["cj"]        # Justiprecio 2026
+        cp_i   = cfg["cp"]        # Proveedor
+        cons_i = cfg["consumo"]   # Consumo mensual estimado
 
         for pi in range(r1-1, r2):
             if pi >= len(df): continue
@@ -119,7 +126,12 @@ def load_solicitudes(file_bytes):
             desc = row[1] if pd.notna(row[1]) else None
             if not desc: continue
             codigo = str(row[0]).strip() if pd.notna(row[0]) else ""
-            if not codigo or codigo == "nan": continue
+            # VARIOS y similares no tienen código vademecum — usar descripcion como ID
+            if not codigo or codigo == "nan":
+                if sheet_name == "VARIOS":
+                    codigo = f"VARIOS_{pi}"
+                else:
+                    continue
 
             def sf(v):
                 try: return float(v) if pd.notna(v) else 0.0
@@ -131,7 +143,7 @@ def load_solicitudes(file_bytes):
             if m == 0 and q > 0 and j > 0: m = q * j
             prov = str(row[cp_i]).strip() if cp_i < len(row) and pd.notna(row[cp_i]) else ""
             oc   = str(row[15]).strip() if len(row)>15 and pd.notna(row[15]) else ""
-            cons = sf(row[5]) if len(row)>5 else 0
+            cons = sf(row[cons_i]) if cons_i < len(row) else 0
 
             # Historical consumption for XYZ
             consums = [sf(row[c]) for c in [2,3,4,5] if c < len(row) and sf(row[c]) > 0]
@@ -670,6 +682,61 @@ with tab3:
             c = {"X":"blue","Y":"orange","Z":"red"}[k]
             kpi(f"Clase {k}", f"{n} ítems", desc, color=c)
 
+    # ── Tablas de desglose XYZ ────────────────────────────────────────────────
+    st.markdown('<div class="section-header">Detalle de ítems por clase XYZ</div>',
+                unsafe_allow_html=True)
+
+    xyz_tab_x, xyz_tab_y, xyz_tab_z = st.tabs([
+        "✅ X — Demanda Estable",
+        "⚡ Y — Demanda Variable",
+        "❓ Z — Demanda Irregular / Sin datos",
+    ])
+
+    xyz_cols_show = ["M_abc","Q_abc","Rubro","Codigo","Descripcion",
+                     "Cantidad","Consumo_Mensual","Justiprecio","Monto","Proveedor"]
+    xyz_cols_show = [c for c in xyz_cols_show if c in df.columns]
+
+    def xyz_detail_df(df_in, clase):
+        sub = df_in[df_in["XYZ"] == clase].copy()
+        if "M_abc" in sub.columns:
+            sub = sub.sort_values(["M_abc","Monto"], ascending=[True, False])
+        else:
+            sub = sub.sort_values("Monto", ascending=False)
+        return sub[xyz_cols_show].rename(columns={
+            "M_abc":"ABC $","Q_abc":"ABC Ctd",
+            "Monto":"Monto ($)","Consumo_Mensual":"Consumo M.",
+        })
+
+    for tab_xyz, clase_xyz, color_xyz in [
+        (xyz_tab_x, "X", "#34d399"),
+        (xyz_tab_y, "Y", "#fbbf24"),
+        (xyz_tab_z, "Z", "#94a3b8"),
+    ]:
+        with tab_xyz:
+            df_xyz_det = xyz_detail_df(df, clase_xyz)
+            n_xyz = len(df_xyz_det)
+            monto_xyz = df[df["XYZ"]==clase_xyz]["Monto"].sum()
+            st.caption(f"{n_xyz} ítems · Monto total: ${monto_xyz:,.0f}")
+            st.dataframe(
+                df_xyz_det.style.format({
+                    "Monto ($)":  "${:,.0f}",
+                    "Justiprecio":"${:,.2f}",
+                    "Cantidad":   "{:,.0f}",
+                    "Consumo M.": "{:,.0f}",
+                }),
+                use_container_width=True,
+                height=420,
+            )
+            buf_xyz = io.BytesIO()
+            df_xyz_det.to_excel(buf_xyz, index=False)
+            st.download_button(
+                f"⬇ Descargar clase {clase_xyz}",
+                data=buf_xyz.getvalue(),
+                file_name=f"xyz_clase_{clase_xyz}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key=f"dl_xyz_{clase_xyz}",
+            )
+
     # ABC-XYZ matrix
     st.markdown('<div class="section-header">Matriz ABC-XYZ</div>', unsafe_allow_html=True)
 
@@ -694,14 +761,20 @@ with tab3:
     }
 
     bg_colors = {
-        "AX":"#dcfce7","AY":"#fef9c3","AZ":"#fee2e2",
-        "BX":"#dcfce7","BY":"#fef9c3","BZ":"#fef9c3",
-        "CX":"#f0fdf4","CY":"#f0fdf4","CZ":"#f8fafc",
+        "AX": ("#0f3d2e", "#4ade80", "#86efac"),
+        "AY": ("#3d3000", "#fbbf24", "#fde68a"),
+        "AZ": ("#3d0f0f", "#ef4444", "#fca5a5"),
+        "BX": ("#0a2e1f", "#34d399", "#6ee7b7"),
+        "BY": ("#2e2200", "#f59e0b", "#fcd34d"),
+        "BZ": ("#2e2200", "#f59e0b", "#fcd34d"),
+        "CX": ("#0a1f15", "#22c55e", "#86efac"),
+        "CY": ("#1a1a0a", "#84cc16", "#bef264"),
+        "CZ": ("#1a1a1a", "#94a3b8", "#cbd5e1"),
     }
 
     mcols = st.columns(4)
     mcols[0].markdown("**ABC \\ XYZ**")
-    for j, xyz in enumerate(["X","Y","Z"]):
+    for j, xyz in enumerate(["X — Estable", "Y — Variable", "Z — Irregular"]):
         mcols[j+1].markdown(f"**{xyz}**")
 
     for abc in ["A","B","C"]:
@@ -712,13 +785,15 @@ with tab3:
             sub = matrix_cnt[(matrix_cnt["M_abc"]==abc)&(matrix_cnt["XYZ"]==xyz)]
             cnt   = int(sub["Items"].sum()) if len(sub)>0 else 0
             monto = sub["Monto"].sum() if len(sub)>0 else 0
-            bg = bg_colors.get(key,"#ffffff")
+            bg, border, fg = bg_colors.get(key, ("#1a1a1a","#475569","#cbd5e1"))
             row_cols[j+1].markdown(
-                f'<div style="background:{bg};border-radius:8px;padding:10px;text-align:center;'
-                f'border:1px solid #e2e8f0;font-size:.82rem">'
-                f'<b style="font-size:1.1rem">{cnt}</b> ítems<br>'
-                f'<span style="color:#64748b">${monto/1e6:.1f}M</span><br>'
-                f'<span style="font-size:.72rem;color:#475569">{strat.get(key,"")}</span></div>',
+                f'<div style="background:{bg};border-radius:10px;padding:14px 10px;'
+                f'text-align:center;border:2px solid {border};font-size:.82rem;min-height:90px">'
+                f'<b style="font-size:1.2rem;color:{border}">{cnt}</b>'
+                f'<span style="color:{fg}"> ítems</span><br>'
+                f'<span style="color:{fg};font-size:.85rem;font-weight:600">${monto/1e6:.1f}M</span><br>'
+                f'<span style="font-size:.70rem;color:{fg};opacity:.85">'
+                f'{strat.get(key,"").replace(chr(10)," · ")}</span></div>',
                 unsafe_allow_html=True,
             )
 
@@ -898,43 +973,34 @@ with tab5:
         st.markdown('<div class="section-header">Ejecución presupuestal</div>',
                     unsafe_allow_html=True)
 
-        # Donut ejecución
+        # Donut ejecución — color gris oscuro para "Sin OC" visible en dark mode
         fig_ej = go.Figure(go.Pie(
             labels=["Con OC", "Sin OC"],
             values=[monto_oc_r, max(0, monto_sin_oc)],
             hole=0.6,
-            marker_colors=["#16a34a", "#e2e8f0"],
+            marker_colors=["#22c55e", "#475569"],
             textinfo="percent+label",
-            textfont_size=12,
+            textfont=dict(size=12, color="#e2e8f0"),
         ))
         fig_ej.update_layout({**CHART_LAYOUT,
             "height": 260,
             "showlegend": False,
             "annotations": [dict(
-                text=f"{pct_ejec_r:.0f}%<br><span style='font-size:11px'>ejecución</span>",
-                x=0.5, y=0.5, font_size=20, showarrow=False,
+                text=f"<b>{pct_ejec_r:.0f}%</b><br>ejecución",
+                x=0.5, y=0.5, font=dict(size=18, color="#e2e8f0"),
+                showarrow=False,
             )],
             "margin": dict(l=10, r=10, t=10, b=10),
         })
         st.plotly_chart(fig_ej, use_container_width=True)
 
-        # Barra adjudicados vs desiertos
-        fig_adj = go.Figure()
-        fig_adj.add_bar(name="Adjudicados", x=["Ítems"], y=[total_r - des_r],
-                        marker_color="#4ade80", text=[total_r - des_r],
-                        textposition="inside")
-        fig_adj.add_bar(name="Desiertos",   x=["Ítems"], y=[des_r],
-                        marker_color="#fb923c", text=[des_r],
-                        textposition="inside")
-        fig_adj.update_layout({**CHART_LAYOUT,
-            "barmode": "stack", "height": 110,
-            "showlegend": True,
-            "legend": dict(orientation="h", y=1.2),
-            "xaxis": dict(visible=False),
-            "yaxis": dict(visible=False),
-            "margin": dict(l=10, r=10, t=30, b=5),
-        })
-        st.plotly_chart(fig_adj, use_container_width=True)
+        # Métricas simples en vez del bar chart (evita superposición)
+        ma, mb = st.columns(2)
+        ma.metric("Adjudicados", f"{total_r - des_r}",
+                  f"{(total_r-des_r)/total_r*100:.0f}%" if total_r > 0 else "")
+        mb.metric("Desiertos", f"{des_r}",
+                  f"{des_r/total_r*100:.0f}%" if total_r > 0 else "",
+                  delta_color="inverse")
 
     st.markdown("---")
 
@@ -1040,15 +1106,15 @@ with tab5:
                 unsafe_allow_html=True)
 
     strat_r = {
-        "AX": ("Stock alto · Proveedor fijo · Reposición continua",     "#dcfce7", "#16a34a"),
-        "AY": ("Stock buffer · Revisar mensual · Analizar causas",       "#fef9c3", "#b45309"),
-        "AZ": ("⚠ CRÍTICO: alto gasto + demanda errática",              "#fee2e2", "#dc2626"),
-        "BX": ("Stock normal · Control periódico",                       "#dcfce7", "#16a34a"),
-        "BY": ("Stock moderado · Revisar trimestral",                    "#fef9c3", "#b45309"),
-        "BZ": ("Stock mínimo · Analizar variabilidad",                   "#fef9c3", "#b45309"),
-        "CX": ("Stock bajo · Pedido por demanda",                        "#f0fdf4", "#15803d"),
-        "CY": ("Sin stock fijo · Control mínimo",                        "#f0fdf4", "#15803d"),
-        "CZ": ("Evaluar eliminar · Pedido esporádico",                   "#f8fafc", "#64748b"),
+        "AX": ("Stock alto · Proveedor fijo · Reposición continua",  "#0f3d2e", "#4ade80", "#86efac"),
+        "AY": ("Stock buffer · Revisar mensual · Analizar causas",    "#3d3000", "#fbbf24", "#fde68a"),
+        "AZ": ("⚠ CRÍTICO: alto gasto + demanda errática",           "#3d0f0f", "#ef4444", "#fca5a5"),
+        "BX": ("Stock normal · Control periódico",                    "#0a2e1f", "#34d399", "#6ee7b7"),
+        "BY": ("Stock moderado · Revisar trimestral",                 "#2e2200", "#f59e0b", "#fcd34d"),
+        "BZ": ("Stock mínimo · Analizar variabilidad",                "#2e2200", "#f59e0b", "#fcd34d"),
+        "CX": ("Stock bajo · Pedido por demanda",                     "#0a1f15", "#22c55e", "#86efac"),
+        "CY": ("Sin stock fijo · Control mínimo",                     "#1a1a0a", "#84cc16", "#bef264"),
+        "CZ": ("Evaluar eliminar · Pedido esporádico",                "#1a1a1a", "#94a3b8", "#cbd5e1"),
     }
 
     hdr_cols = st.columns(4)
@@ -1068,14 +1134,14 @@ with tab5:
             ] if "M_abc" in df_r_m.columns else pd.DataFrame()
             cnt_xyz   = len(sub_xyz)
             monto_xyz = sub_xyz["Monto"].sum() if len(sub_xyz) > 0 else 0
-            txt, bg, fg = strat_r.get(key, ("", "#ffffff", "#000000"))
+            txt, bg, border, fg = strat_r.get(key, ("", "#1a1a1a", "#475569", "#cbd5e1"))
             row_c[j+1].markdown(
-                f'<div style="background:{bg};border-radius:8px;padding:10px;'
-                f'text-align:center;border:1px solid #e2e8f0;font-size:.82rem;min-height:80px">'
-                f'<b style="font-size:1.1rem;color:{fg}">{cnt_xyz}</b>'
+                f'<div style="background:{bg};border-radius:10px;padding:14px 10px;'
+                f'text-align:center;border:2px solid {border};font-size:.82rem;min-height:80px">'
+                f'<b style="font-size:1.2rem;color:{border}">{cnt_xyz}</b>'
                 f'<span style="color:{fg}"> ítems</span><br>'
-                f'<span style="color:#64748b;font-size:.78rem">${monto_xyz/1e6:.2f}M</span><br>'
-                f'<span style="font-size:.70rem;color:#475569">{txt}</span></div>',
+                f'<span style="color:{fg};font-size:.85rem;font-weight:600">${monto_xyz/1e6:.2f}M</span><br>'
+                f'<span style="font-size:.70rem;color:{fg};opacity:.85">{txt}</span></div>',
                 unsafe_allow_html=True,
             )
 
