@@ -1,0 +1,49 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Workflow: Actualizar Tablero de Farmacia
+#
+# Se ejecuta automáticamente cuando se sube un archivo .xlsx al repositorio.
+# También se puede ejecutar manualmente desde la pestaña Actions en GitHub.
+#
+# Pasos:
+#   1. Instala Python y las librerías necesarias
+#   2. Corre generar_tablero.py que lee el xlsx y genera index.html
+#   3. Hace commit del index.html nuevo → GitHub Pages lo publica automáticamente
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: Actualizar Tablero
+
+on:
+  push:
+    paths:
+      - '**.xlsx'          # Se activa cuando subís cualquier archivo .xlsx
+  workflow_dispatch:       # También permite correrlo manualmente desde GitHub
+
+permissions:
+  contents: write          # Necesario para hacer commit del index.html generado
+
+jobs:
+  generar:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar librerías
+        run: pip install pandas openpyxl numpy
+
+      - name: Generar index.html
+        run: python generar_tablero.py
+
+      - name: Subir index.html al repositorio
+        run: |
+          git config user.name  "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add index.html
+          git diff --staged --quiet || git commit -m "Tablero actualizado automáticamente $(date +'%d/%m/%Y %H:%M')"
+          git push
