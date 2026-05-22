@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tablero Farmacia · HIGA Oscar Alende</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0d1117;--surf:#161b22;--surf2:#21262d;--bord:#30363d;
+  --tx:#ffffff;--muted:#c9d1d9;--muted2:#8b949e;
+  --blue:#58a6ff;--green:#3fb950;--yel:#e3b341;--red:#f85149;--purple:#bc8cff;
+}
+body{background:var(--bg);color:var(--tx);font-family:'DM Sans',sans-serif;font-size:14px;min-height:100vh}
+
+/* ── TOPBAR ── */
+.topbar{background:var(--surf);border-bottom:1px solid var(--bord);padding:0 1.5rem;height:54px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:200}
+.brand{display:flex;align-items:center;gap:10px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 8px var(--green);flex-shrink:0}
+.brand-name{font-size:15px;font-weight:600;color:#ffffff;letter-spacing:-.01em}
+.brand-sub{font-size:12px;color:var(--muted);margin-left:6px}
+.update-btn{background:var(--surf2);color:#ffffff;border:1px solid var(--bord);border-radius:7px;padding:7px 16px;font-size:13px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:6px;transition:border-color .15s}
+.update-btn:hover{border-color:var(--blue)}
+#file-inp{display:none}
+
+/* ── UPDATE OVERLAY ── */
+.overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:300;align-items:center;justify-content:center}
+.overlay.show{display:flex}
+.overlay-box{background:var(--surf);border:1px solid var(--bord);border-radius:14px;padding:2rem 2.5rem;text-align:center;max-width:400px}
+.overlay-title{font-size:17px;font-weight:600;color:#ffffff;margin-bottom:8px}
+.overlay-sub{font-size:13px;color:var(--muted);margin-bottom:1.5rem;line-height:1.6}
+.drop-zone{border:2px dashed var(--bord);border-radius:10px;padding:2rem;cursor:pointer;transition:border-color .2s,background .2s;margin-bottom:1rem}
+.drop-zone:hover{border-color:var(--blue);background:rgba(88,166,255,.04)}
+.drop-icon{font-size:36px;margin-bottom:8px}
+.drop-label{font-size:14px;color:var(--muted);font-weight:500}
+.cancel-btn{background:none;border:none;color:var(--muted2);font-size:13px;cursor:pointer;padding:6px 12px;border-radius:6px}
+.cancel-btn:hover{color:#ffffff}
+
+/* ── TABS ── */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--bord);background:var(--surf);padding:0 1.5rem;overflow-x:auto}
+.tab{padding:12px 20px;font-size:13px;font-weight:500;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap;transition:color .15s}
+.tab:hover{color:#ffffff}
+.tab.on{color:#ffffff;border-bottom-color:var(--blue)}
+
+/* ── LAYOUT ── */
+.page{display:none;padding:1.5rem;max-width:1400px;margin:0 auto}
+.page.on{display:block}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-bottom:14px}
+@media(max-width:900px){.g2,.g3{grid-template-columns:1fr}}
+
+/* ── KPI STRIP ── */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+.kpi{background:var(--surf);border:1px solid var(--bord);border-radius:10px;padding:.9rem 1rem;border-left:3px solid var(--blue)}
+.kpi.g{border-left-color:var(--green)}.kpi.y{border-left-color:var(--yel)}.kpi.r{border-left-color:var(--red)}.kpi.p{border-left-color:var(--purple)}
+.kpi-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
+.kpi-val{font-size:22px;font-weight:600;color:#ffffff;line-height:1}
+.kpi-sub{font-size:12px;color:var(--muted);margin-top:4px}
+
+/* ── CARD ── */
+.card{background:var(--surf);border:1px solid var(--bord);border-radius:10px;padding:1.1rem 1.25rem}
+.ctitle{font-size:11px;font-weight:600;color:#ffffff;text-transform:uppercase;letter-spacing:.07em;margin-bottom:1rem}
+
+/* ── EJEC BARS ── */
+.eb{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+.eb-lbl{font-size:12px;color:#ffffff;width:170px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.eb-track{flex:1;height:11px;background:var(--surf2);border-radius:3px;overflow:hidden}
+.eb-fill{height:100%;border-radius:3px}
+.eb-pct{font-size:12px;color:#ffffff;width:38px;text-align:right;font-family:'DM Mono',monospace;font-weight:500}
+
+/* ── PARETO ── */
+.pb{display:flex;align-items:center;gap:8px;margin-bottom:5px}
+.pb-lbl{font-size:11px;color:#ffffff;width:140px;flex-shrink:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pb-track{flex:1;height:15px;background:var(--surf2);border-radius:3px;overflow:hidden}
+.pb-fill{height:100%;border-radius:3px;transition:width .5s}
+.pb-val{font-size:11px;color:var(--muted);width:72px;font-family:'DM Mono',monospace}
+
+/* ── MATRIX ── */
+.mtx{width:100%;border-collapse:collapse;font-size:13px}
+.mtx th,.mtx td{border:1px solid var(--bord);padding:10px 12px;text-align:center}
+.mtx th{background:var(--surf2);color:#ffffff;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.mtx .rh{background:var(--surf2);font-weight:600;color:#ffffff;font-size:13px}
+.mtx .ax,.mtx .bx,.mtx .cx{background:rgba(63,185,80,.15);border-color:rgba(63,185,80,.35)}
+.mtx .ay,.mtx .by,.mtx .cy{background:rgba(227,179,65,.12);border-color:rgba(227,179,65,.35)}
+.mtx .az{background:rgba(248,81,73,.18);border-color:rgba(248,81,73,.45)}
+.mtx .bz,.mtx .cz{background:rgba(139,148,158,.08)}
+.big{font-size:20px;font-weight:700;color:#ffffff;display:block}
+.sm{font-size:11px;color:var(--muted);display:block;margin-top:2px}
+.st{font-size:10px;color:var(--muted);display:block;margin-top:4px;opacity:.9}
+
+/* ── TABLE ── */
+.tbl-wrap{overflow:auto;border-radius:8px;border:1px solid var(--bord);max-height:500px}
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{background:var(--surf2);padding:9px 12px;text-align:left;font-size:11px;font-weight:600;color:#ffffff;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--bord);position:sticky;top:0;z-index:10}
+.tbl td{padding:8px 12px;border-bottom:1px solid var(--bord);color:#ffffff}
+.tbl tr:hover td{background:rgba(255,255,255,.03)}
+.mono{font-family:'DM Mono',monospace;font-size:12px;color:#ffffff}
+
+/* ── BADGE ── */
+.bx{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600}
+.bA{background:rgba(63,185,80,.25);color:#3fb950}
+.bB{background:rgba(227,179,65,.25);color:#e3b341}
+.bC{background:rgba(139,148,158,.2);color:#c9d1d9}
+.bX{background:rgba(88,166,255,.25);color:#58a6ff}
+.bY{background:rgba(227,179,65,.25);color:#e3b341}
+.bZ{background:rgba(139,148,158,.2);color:#c9d1d9}
+.bSI{background:rgba(248,81,73,.2);color:#f85149}
+.bNO{background:rgba(63,185,80,.18);color:#3fb950}
+
+/* ── FILTERS ── */
+.frow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px}
+.frow select{background:var(--surf2);color:#ffffff;border:1px solid var(--bord);border-radius:6px;padding:6px 10px;font-size:12px;font-family:'DM Sans',sans-serif;cursor:pointer;outline:none}
+.frow select:focus{border-color:var(--blue)}
+.frow label{font-size:12px;color:var(--muted)}
+#data-cnt{margin-left:auto;font-size:12px;color:var(--muted)}
+
+/* ── HHI ── */
+.hhi-box{margin-top:12px;padding:10px 14px;background:var(--surf2);border-radius:8px;font-size:12px;color:var(--muted);line-height:1.6}
+.hhi-box strong{color:#ffffff}
+
+/* ── FOOTER ── */
+footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);border-top:1px solid var(--bord);margin-top:2rem}
+</style>
+</head>
+<body>
+
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="brand">
+    <div class="dot"></div>
+    <span class="brand-name">Farmacia · HIGA Oscar Alende</span>
+    <span class="brand-sub" id="ts"></span>
+  </div>
+  <button class="update-btn" onclick="document.getElementById('ov').classList.add('show')">
+    ↑ Actualizar datos
+  </button>
+  <input type="file" id="file-inp" accept=".csv" onchange="reloadCSV(event)">
+</div>
+
+<!-- UPDATE OVERLAY -->
+<div class="overlay" id="ov">
+  <div class="overlay-box">
+    <div class="overlay-title">Actualizar datos</div>
+    <div class="overlay-sub">Generá un nuevo <code style="background:var(--surf2);padding:2px 6px;border-radius:4px;font-family:'DM Mono',monospace;font-size:12px">datos_farmacia.csv</code> con el script Python y cargalo acá para actualizar el tablero.</div>
+    <div class="drop-zone" onclick="document.getElementById('file-inp').click()" id="dz">
+      <div class="drop-icon">📄</div>
+      <div class="drop-label">Clic o arrastrá el CSV acá</div>
+    </div>
+    <button class="cancel-btn" onclick="document.getElementById('ov').classList.remove('show')">Cancelar</button>
+  </div>
+</div>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab on"  onclick="go('resumen',this)">Resumen</div>
+  <div class="tab"     onclick="go('abc',this)">ABC por monto</div>
+  <div class="tab"     onclick="go('xyz',this)">Análisis XYZ</div>
+  <div class="tab"     onclick="go('prov',this)">Proveedores</div>
+  <div class="tab"     onclick="go('ejec',this)">Ejecución</div>
+  <div class="tab"     onclick="go('datos',this)">Datos</div>
+</div>
+
+<!-- ════ RESUMEN ════ -->
+<div class="page on" id="pg-resumen">
+  <div class="kpis" id="kpi-res"></div>
+  <div class="g2">
+    <div class="card"><div class="ctitle">Monto por rubro</div><div style="height:340px;position:relative"><canvas id="ch-rub"></canvas></div></div>
+    <div class="card"><div class="ctitle">Adjudicados vs desiertos</div><div style="height:340px;position:relative"><canvas id="ch-des"></canvas></div></div>
+  </div>
+  <div class="card"><div class="ctitle">Ejecución presupuestal por rubro</div><div id="ejec-bars"></div></div>
+</div>
+
+<!-- ════ ABC ════ -->
+<div class="page" id="pg-abc">
+  <div class="kpis" id="kpi-abc"></div>
+  <div class="g2">
+    <div class="card"><div class="ctitle">Distribución ABC por monto</div><div style="height:300px;position:relative"><canvas id="ch-abc-pie"></canvas></div></div>
+    <div class="card"><div class="ctitle">Curva de Pareto — top 40</div><div id="pareto" style="max-height:300px;overflow-y:auto;padding-right:4px"></div></div>
+  </div>
+  <div class="card"><div class="ctitle">Top 30 ítems por monto</div><div class="tbl-wrap"><table class="tbl" id="t30"><thead><tr><th>Descripción</th><th>Rubro</th><th>Proveedor</th><th>ABC</th><th>XYZ</th><th>Monto</th><th>Justiprecio</th></tr></thead><tbody></tbody></table></div></div>
+</div>
+
+<!-- ════ XYZ ════ -->
+<div class="page" id="pg-xyz">
+  <div class="kpis" id="kpi-xyz"></div>
+  <div class="g2">
+    <div class="card"><div class="ctitle">Ítems por clase XYZ</div><div style="height:260px;position:relative"><canvas id="ch-xyz"></canvas></div></div>
+    <div class="card"><div class="ctitle">Matriz ABC × XYZ</div><div style="overflow-x:auto"><table class="mtx" id="mtx"></table></div></div>
+  </div>
+  <div class="frow">
+    <label>Filtrar:</label>
+    <select id="fx-clase" onchange="rXYZ()"><option value="">Clase XYZ — todas</option><option value="X">X — Estable</option><option value="Y">Y — Variable</option><option value="Z">Z — Irregular</option></select>
+    <select id="fx-rubro" onchange="rXYZ()"><option value="">Rubro — todos</option></select>
+  </div>
+  <div class="card"><div class="ctitle">Detalle de ítems</div><div class="tbl-wrap"><table class="tbl" id="t-xyz"><thead><tr><th>Descripción</th><th>Rubro</th><th>Proveedor</th><th>XYZ</th><th>ABC</th><th>CV</th><th>Consumo mensual</th></tr></thead><tbody></tbody></table></div></div>
+</div>
+
+<!-- ════ PROVEEDORES ════ -->
+<div class="page" id="pg-prov">
+  <div class="kpis" id="kpi-prov"></div>
+  <div class="g2">
+    <div class="card"><div class="ctitle">Top 15 proveedores por monto</div><div style="height:400px;position:relative"><canvas id="ch-prov"></canvas></div></div>
+    <div class="card">
+      <div class="ctitle">Concentración — top 5 vs resto</div>
+      <div style="height:280px;position:relative"><canvas id="ch-prov-pie"></canvas></div>
+      <div class="hhi-box" id="hhi"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ EJECUCION ════ -->
+<div class="page" id="pg-ejec">
+  <div class="kpis" id="kpi-ejec"></div>
+  <div class="g2">
+    <div class="card"><div class="ctitle">Ejecución monetaria por rubro</div><div style="height:400px;position:relative"><canvas id="ch-ejec-r"></canvas></div></div>
+    <div class="card"><div class="ctitle">Con OC vs sin OC (monto)</div><div style="height:280px;position:relative"><canvas id="ch-ejec-pie"></canvas></div></div>
+  </div>
+</div>
+
+<!-- ════ DATOS ════ -->
+<div class="page" id="pg-datos">
+  <div class="frow">
+    <label>Rubro:</label><select id="fd-r" onchange="rDatos()"><option value="">Todos</option></select>
+    <label>ABC:</label><select id="fd-a" onchange="rDatos()"><option value="">Todos</option><option>A</option><option>B</option><option>C</option></select>
+    <label>XYZ:</label><select id="fd-x" onchange="rDatos()"><option value="">Todos</option><option>X</option><option>Y</option><option>Z</option></select>
+    <label>Desierto:</label><select id="fd-d" onchange="rDatos()"><option value="">Todos</option><option value="NO">No</option><option value="SI">Sí</option></select>
+    <label>OC:</label><select id="fd-o" onchange="rDatos()"><option value="">Todos</option><option value="SI">Con OC</option><option value="NO">Sin OC</option></select>
+    <span id="data-cnt"></span>
+  </div>
+  <div class="card" style="padding:0">
+    <div class="tbl-wrap" style="max-height:600px">
+      <table class="tbl" id="t-datos">
+        <thead><tr><th>Descripción</th><th>Rubro</th><th>Proveedor</th><th>ABC</th><th>XYZ</th><th>Monto</th><th>Justiprecio</th><th>Cantidad</th><th>OC</th><th>Desierto</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<footer>Tablero de Control · Farmacia HIGA Oscar Alende · Datos al <span id="data-date"></span></footer>
+
+<script>
+// ── DATOS EMBEBIDOS ──────────────────────────────────────────────────────────
+const DATA = [];
+const BUILD_DATE = new Date().toLocaleDateString('es-AR');
+document.getElementById('ts').textContent = '· Datos al ' + BUILD_DATE;
+document.getElementById('data-date').textContent = BUILD_DATE;
+
+// ── UTILS ────────────────────────────────────────────────────────────────────
+const CH = {};
+const $ = id => document.getElementById(id);
+const qq = s => document.querySelectorAll(s);
+
+function fmt(n) {
+  n = Number(n||0);
+  if (n >= 1e9) return '$' + (n/1e9).toFixed(2) + 'MM';
+  if (n >= 1e6) return '$' + (n/1e6).toFixed(1) + 'M';
+  if (n >= 1e3) return '$' + (n/1e3).toFixed(0) + 'K';
+  return '$' + Math.round(n).toLocaleString('es-AR');
+}
+function fmtN(n) { return Number(n||0).toLocaleString('es-AR',{maximumFractionDigits:1}); }
+function clr(c) { return {A:'var(--green)',B:'var(--yel)',C:'var(--muted2)',X:'var(--blue)',Y:'var(--yel)',Z:'var(--muted2)'}[c]||'var(--muted2)'; }
+function badge(v, prefix) {
+  const cls = prefix !== undefined ? prefix + v : v;
+  return `<span class="bx b${cls}">${v}</span>`;
+}
+function destroyChart(id) { if(CH[id]){CH[id].destroy();delete CH[id]} }
+
+// Chart.js global defaults for white text
+Chart.defaults.color = '#ffffff';
+Chart.defaults.borderColor = '#30363d';
+
+// ── TABS ─────────────────────────────────────────────────────────────────────
+function go(id, el) {
+  qq('.tab').forEach(t => t.classList.remove('on'));
+  qq('.page').forEach(p => p.classList.remove('on'));
+  el.classList.add('on');
+  $('pg-' + id).classList.add('on');
+}
+
+// ── UPDATE CSV ───────────────────────────────────────────────────────────────
+function reloadCSV(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    // Parse CSV manually (no PapaParse in this version)
+    const text = ev.target.result.replace(/^\uFEFF/, '');
+    const lines = text.split('\n').filter(l => l.trim());
+    const headers = lines[0].split(',');
+    const newData = lines.slice(1).map(line => {
+      // Handle quoted fields
+      const vals = [];
+      let cur = '', inQ = false;
+      for (let ch of line) {
+        if (ch === '"') inQ = !inQ;
+        else if (ch === ',' && !inQ) { vals.push(cur); cur = ''; }
+        else cur += ch;
+      }
+      vals.push(cur);
+      const obj = {};
+      headers.forEach((h, i) => obj[h.trim()] = (vals[i]||'').trim());
+      return obj;
+    }).filter(r => r.Descripcion);
+    // Reload all charts with new data
+    Object.assign(DATA, {length: newData.length});
+    DATA.splice(0, DATA.length, ...newData);
+    buildAll();
+    $('ov').classList.remove('show');
+    document.getElementById('ts').textContent = '· Actualizado ' + new Date().toLocaleString('es-AR');
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// Drag & drop for overlay
+const dz = $('dz');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.style.borderColor='var(--blue)'; });
+dz.addEventListener('dragleave', () => dz.style.borderColor = '');
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.style.borderColor = '';
+  const f = e.dataTransfer.files[0];
+  if (f) { const dt = new DataTransfer(); dt.items.add(f); $('file-inp').files = dt.files; reloadCSV({target:{files:dt.files}}); }
+});
+
+// ── CHART OPTIONS ────────────────────────────────────────────────────────────
+const AX_WHITE = { ticks:{color:'#ffffff'}, grid:{color:'rgba(255,255,255,.07)'}, border:{display:false} };
+const AX_NONE  = { ticks:{color:'#ffffff'}, grid:{display:false}, border:{display:false} };
+
+// ── BUILD ALL ────────────────────────────────────────────────────────────────
+function buildAll() {
+  buildResumen(); buildABC(); buildXYZ(); buildProveedores(); buildEjecucion(); buildDatos();
+}
+
+// ══ RESUMEN ══════════════════════════════════════════════════════════════════
+function buildResumen() {
+  const total = DATA.length;
+  const uniq  = new Set(DATA.filter(r => r.Es_Duplicado==='NO').map(r => r.Codigo)).size
+              + DATA.filter(r => r.Codigo?.startsWith('VARIOS_')).length;
+  const monto = DATA.reduce((s,r) => s + Number(r.Monto_Total||0), 0);
+  const des   = DATA.filter(r => r.Es_Desierto==='SI').length;
+  const conOC = DATA.filter(r => r.Tiene_OC==='SI').length;
+  const pctE  = (conOC/total*100).toFixed(1);
+
+  $('kpi-res').innerHTML = `
+    <div class="kpi g"><div class="kpi-lbl">Medicamentos únicos</div><div class="kpi-val">${uniq.toLocaleString('es-AR')}</div><div class="kpi-sub">${total.toLocaleString('es-AR')} renglones totales</div></div>
+    <div class="kpi"  ><div class="kpi-lbl">Monto total justiprecio</div><div class="kpi-val">${fmt(monto)}</div><div class="kpi-sub">Suma col Monto_Total</div></div>
+    <div class="kpi y"><div class="kpi-lbl">Con OC confirmada</div><div class="kpi-val">${conOC.toLocaleString('es-AR')}</div><div class="kpi-sub">${pctE}% de ejecución</div></div>
+    <div class="kpi r"><div class="kpi-lbl">Ítems desiertos</div><div class="kpi-val">${des.toLocaleString('es-AR')}</div><div class="kpi-sub">${(des/total*100).toFixed(1)}% del total</div></div>
+    <div class="kpi p"><div class="kpi-lbl">Sin OC (pendiente)</div><div class="kpi-val">${(total-conOC).toLocaleString('es-AR')}</div><div class="kpi-sub">${(100-Number(pctE)).toFixed(1)}% por formalizar</div></div>
+  `;
+
+  // Monto por rubro
+  const rm = {};
+  DATA.forEach(r => { rm[r.Rubro] = (rm[r.Rubro]||0) + Number(r.Monto_Total||0); });
+  const rsorted = Object.entries(rm).sort((a,b)=>b[1]-a[1]);
+  destroyChart('ch-rub');
+  CH['ch-rub'] = new Chart($('ch-rub'), {
+    type:'bar',
+    data:{ labels:rsorted.map(r=>r[0]), datasets:[{data:rsorted.map(r=>r[1]), backgroundColor:'rgba(88,166,255,.75)', borderRadius:3}] },
+    options:{ indexAxis:'y', responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>fmt(c.raw)}} },
+      scales:{ x:{...AX_WHITE, ticks:{...AX_WHITE.ticks, callback:v=>fmt(v)}}, y:{...AX_NONE} }
+    }
+  });
+
+  // Adjudicados vs desiertos
+  const dm = {};
+  DATA.forEach(r => { if(!dm[r.Rubro])dm[r.Rubro]={a:0,d:0}; r.Es_Desierto==='SI'?dm[r.Rubro].d++:dm[r.Rubro].a++; });
+  const dsorted = Object.entries(dm).sort((a,b)=>(b[1].a+b[1].d)-(a[1].a+a[1].d));
+  destroyChart('ch-des');
+  CH['ch-des'] = new Chart($('ch-des'), {
+    type:'bar',
+    data:{ labels:dsorted.map(r=>r[0]), datasets:[
+      {label:'Adjudicados', data:dsorted.map(r=>r[1].a), backgroundColor:'rgba(63,185,80,.75)', borderRadius:2},
+      {label:'Desiertos',   data:dsorted.map(r=>r[1].d), backgroundColor:'rgba(248,81,73,.75)',  borderRadius:2}
+    ]},
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{labels:{color:'#ffffff'}} },
+      scales:{ x:{stacked:true, ...AX_NONE, ticks:{...AX_NONE.ticks, maxRotation:40, font:{size:10}}}, y:{stacked:true, ...AX_WHITE} }
+    }
+  });
+
+  // Ejecución bars
+  const em = {};
+  DATA.forEach(r=>{ if(!em[r.Rubro])em[r.Rubro]={t:0,o:0}; em[r.Rubro].t+=Number(r.Monto_Total||0); if(r.Tiene_OC==='SI')em[r.Rubro].o+=Number(r.Monto_Total||0); });
+  const es = Object.entries(em).map(([k,v])=>({r:k,p:v.t>0?v.o/v.t*100:0})).sort((a,b)=>b.p-a.p);
+  $('ejec-bars').innerHTML = es.map(e => {
+    const c = e.p>=80?'var(--green)':e.p>=50?'var(--yel)':'var(--red)';
+    return `<div class="eb"><div class="eb-lbl">${e.r}</div><div class="eb-track"><div class="eb-fill" style="width:${Math.min(e.p,100).toFixed(1)}%;background:${c}"></div></div><div class="eb-pct">${e.p.toFixed(0)}%</div></div>`;
+  }).join('');
+}
+
+// ══ ABC ══════════════════════════════════════════════════════════════════════
+function buildABC() {
+  const bc = {A:{n:0,m:0},B:{n:0,m:0},C:{n:0,m:0}};
+  DATA.forEach(r=>{ const c=r.Clase_ABC_Monto; if(bc[c]){bc[c].n++;bc[c].m+=Number(r.Monto_Total||0)} });
+  const tm = DATA.reduce((s,r)=>s+Number(r.Monto_Total||0),0);
+
+  $('kpi-abc').innerHTML = `
+    <div class="kpi g"><div class="kpi-lbl">Clase A</div><div class="kpi-val">${bc.A.n}</div><div class="kpi-sub">${fmt(bc.A.m)} · ${(bc.A.m/tm*100).toFixed(0)}% del gasto</div></div>
+    <div class="kpi y"><div class="kpi-lbl">Clase B</div><div class="kpi-val">${bc.B.n}</div><div class="kpi-sub">${fmt(bc.B.m)} · ${(bc.B.m/tm*100).toFixed(0)}% del gasto</div></div>
+    <div class="kpi" ><div class="kpi-lbl">Clase C</div><div class="kpi-val">${bc.C.n}</div><div class="kpi-sub">${fmt(bc.C.m)} · ${(bc.C.m/tm*100).toFixed(0)}% del gasto</div></div>
+  `;
+
+  destroyChart('ch-abc-pie');
+  CH['ch-abc-pie'] = new Chart($('ch-abc-pie'), {
+    type:'doughnut',
+    data:{ labels:['Clase A','Clase B','Clase C'], datasets:[{data:[bc.A.m,bc.B.m,bc.C.m], backgroundColor:['rgba(63,185,80,.85)','rgba(227,179,65,.85)','rgba(139,148,158,.55)'], borderColor:'#161b22', borderWidth:3}] },
+    options:{ responsive:true, maintainAspectRatio:false, cutout:'58%',
+      plugins:{ legend:{labels:{color:'#ffffff',font:{size:12}}}, tooltip:{callbacks:{label:c=>`${c.label}: ${fmt(c.raw)} (${(c.raw/tm*100).toFixed(1)}%)`}} }
+    }
+  });
+
+  const top40 = DATA.filter(r=>Number(r.Monto_Total)>0).sort((a,b)=>b.Monto_Total-a.Monto_Total).slice(0,40);
+  const max40 = Number(top40[0]?.Monto_Total||1);
+  $('pareto').innerHTML = top40.map((r,i)=>`
+    <div class="pb">
+      <div class="pb-lbl" title="${r.Descripcion}">${i+1}. ${r.Descripcion}</div>
+      <div class="pb-track"><div class="pb-fill" style="width:${(Number(r.Monto_Total)/max40*100).toFixed(1)}%;background:${clr(r.Clase_ABC_Monto)}"></div></div>
+      <div class="pb-val">${fmt(r.Monto_Total)}</div>
+    </div>`).join('');
+
+  const sorted30 = DATA.sort((a,b)=>b.Monto_Total-a.Monto_Total).slice(0,30);
+  document.querySelector('#t30 tbody').innerHTML = sorted30.map(r=>`<tr>
+    <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.Descripcion}">${r.Descripcion}</td>
+    <td style="font-size:11px;color:var(--muted)">${r.Rubro}</td>
+    <td style="font-size:11px">${r.Proveedor}</td>
+    <td>${badge(r.Clase_ABC_Monto)}</td>
+    <td>${badge(r.Clase_XYZ)}</td>
+    <td class="mono">${fmt(r.Monto_Total)}</td>
+    <td class="mono">${fmt(r.Justiprecio)}</td>
+  </tr>`).join('');
+}
+
+// ══ XYZ ══════════════════════════════════════════════════════════════════════
+function buildXYZ() {
+  const xc = {X:{n:0,m:0},Y:{n:0,m:0},Z:{n:0,m:0}};
+  DATA.forEach(r=>{ if(xc[r.Clase_XYZ]){xc[r.Clase_XYZ].n++;xc[r.Clase_XYZ].m+=Number(r.Monto_Total||0)} });
+
+  $('kpi-xyz').innerHTML = `
+    <div class="kpi"  ><div class="kpi-lbl">X — Estable</div><div class="kpi-val" style="color:var(--blue)">${xc.X.n}</div><div class="kpi-sub">CV ≤ 0.50 · demanda regular</div></div>
+    <div class="kpi y"><div class="kpi-lbl">Y — Variable</div><div class="kpi-val" style="color:var(--yel)">${xc.Y.n}</div><div class="kpi-sub">CV 0.51–1.00 · fluctuante</div></div>
+    <div class="kpi"  ><div class="kpi-lbl">Z — Irregular</div><div class="kpi-val" style="color:var(--muted)">${xc.Z.n}</div><div class="kpi-sub">CV > 1.00 o sin historial</div></div>
+  `;
+
+  destroyChart('ch-xyz');
+  CH['ch-xyz'] = new Chart($('ch-xyz'), {
+    type:'bar',
+    data:{ labels:['X — Estable','Y — Variable','Z — Irregular'], datasets:[{data:[xc.X.n,xc.Y.n,xc.Z.n], backgroundColor:['rgba(88,166,255,.8)','rgba(227,179,65,.8)','rgba(139,148,158,.55)'], borderRadius:4}] },
+    options:{ responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{callbacks:{label:c=>`${c.raw} ítems`}} },
+      scales:{ x:{...AX_NONE}, y:{...AX_WHITE} }
+    }
+  });
+
+  // Matrix
+  const mx = {};
+  ['A','B','C'].forEach(a=>['X','Y','Z'].forEach(x=>{mx[a+x]={n:0,m:0}}));
+  DATA.forEach(r=>{ const k=(r.Clase_ABC_Monto||'')+(r.Clase_XYZ||''); if(mx[k]){mx[k].n++;mx[k].m+=Number(r.Monto_Total||0)} });
+  const strat={AX:'Stock alto · Prov. fijo',AY:'Buffer · Rev. mensual',AZ:'⚠ CRÍTICO',BX:'Stock normal',BY:'Stock moderado',BZ:'Stock mínimo',CX:'Bajo stock · demanda',CY:'Sin stock fijo',CZ:'Evaluar eliminar'};
+  $('mtx').innerHTML = `<thead><tr><th></th><th style="color:var(--blue)">X — Estable</th><th style="color:var(--yel)">Y — Variable</th><th style="color:var(--muted)">Z — Irregular</th></tr></thead><tbody>`
+    + ['A','B','C'].map(a=>`<tr><td class="rh">Clase ${a}</td>${['X','Y','Z'].map(x=>{const k=a+x,d=mx[k];return`<td class="${k.toLowerCase()}"><span class="big">${d.n}</span><span class="sm">${fmt(d.m)}</span><span class="st">${strat[k]||''}</span></td>`}).join('')}</tr>`).join('')
+    + '</tbody>';
+
+  // Populate rubro filter
+  const rubros = [...new Set(DATA.map(r=>r.Rubro))].sort();
+  $('fx-rubro').innerHTML = '<option value="">Rubro — todos</option>' + rubros.map(r=>`<option>${r}</option>`).join('');
+  rXYZ();
+}
+
+function rXYZ() {
+  const fc=$('fx-clase').value, fr=$('fx-rubro').value;
+  const rows=DATA.filter(r=>(!fc||r.Clase_XYZ===fc)&&(!fr||r.Rubro===fr)).sort((a,b)=>b.Monto_Total-a.Monto_Total);
+  document.querySelector('#t-xyz tbody').innerHTML=rows.map(r=>`<tr>
+    <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.Descripcion}">${r.Descripcion}</td>
+    <td style="font-size:11px;color:var(--muted)">${r.Rubro}</td>
+    <td style="font-size:11px">${r.Proveedor}</td>
+    <td>${badge(r.Clase_XYZ)}</td><td>${badge(r.Clase_ABC_Monto)}</td>
+    <td class="mono">${Number(r.CV||0).toFixed(3)}</td>
+    <td class="mono">${fmtN(r.Consumo_Mensual)}</td>
+  </tr>`).join('');
+}
+
+// ══ PROVEEDORES ══════════════════════════════════════════════════════════════
+function buildProveedores() {
+  const pm={};
+  DATA.filter(r=>r.Proveedor&&!['desierto','desierta',''].includes(r.Proveedor.toLowerCase())).forEach(r=>{
+    if(!pm[r.Proveedor])pm[r.Proveedor]={m:0,n:0};
+    pm[r.Proveedor].m+=Number(r.Monto_Total||0); pm[r.Proveedor].n++;
+  });
+  const ps=Object.entries(pm).sort((a,b)=>b[1].m-a[1].m);
+  const tm=ps.reduce((s,p)=>s+p[1].m,0);
+  const t5=ps.slice(0,5).reduce((s,p)=>s+p[1].m,0);
+  const hhi=ps.reduce((s,p)=>s+Math.pow(p[1].m/tm,2),0);
+
+  $('kpi-prov').innerHTML=`
+    <div class="kpi"  ><div class="kpi-lbl">Total proveedores</div><div class="kpi-val">${ps.length}</div></div>
+    <div class="kpi r"><div class="kpi-lbl">Concentración top 5</div><div class="kpi-val">${(t5/tm*100).toFixed(1)}%</div><div class="kpi-sub">${t5/tm>.7?'Riesgo ALTO':'Moderado'}</div></div>
+    <div class="kpi y"><div class="kpi-lbl">Índice HHI</div><div class="kpi-val">${hhi.toFixed(4)}</div><div class="kpi-sub">${hhi>.25?'Alta concentración':hhi>.15?'Moderada':'Baja'}</div></div>
+    <div class="kpi g"><div class="kpi-lbl">Mayor proveedor</div><div class="kpi-val" style="font-size:15px">${ps[0]?.[0]||''}</div><div class="kpi-sub">${fmt(ps[0]?.[1]?.m||0)} · ${(ps[0]?.[1]?.m/tm*100||0).toFixed(1)}%</div></div>
+  `;
+
+  const p15=ps.slice(0,15);
+  destroyChart('ch-prov');
+  CH['ch-prov']=new Chart($('ch-prov'),{
+    type:'bar',
+    data:{labels:p15.map(p=>p[0]),datasets:[{data:p15.map(p=>p[1].m),backgroundColor:p15.map(p=>{const pct=p[1].m/tm*100;return pct>=20?'rgba(248,81,73,.8)':pct>=10?'rgba(227,179,65,.8)':pct>=5?'rgba(88,166,255,.75)':'rgba(139,148,158,.55)'}),borderRadius:3}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${fmt(c.raw)} (${(c.raw/tm*100).toFixed(1)}%)`}}},
+      scales:{x:{...AX_WHITE,ticks:{...AX_WHITE.ticks,callback:v=>fmt(v)}},y:{...AX_NONE}}
+    }
+  });
+
+  const otros=ps.slice(5).reduce((s,p)=>s+p[1].m,0);
+  destroyChart('ch-prov-pie');
+  CH['ch-prov-pie']=new Chart($('ch-prov-pie'),{
+    type:'doughnut',
+    data:{labels:[...ps.slice(0,5).map(p=>p[0]),'Otros'],datasets:[{data:[...ps.slice(0,5).map(p=>p[1].m),otros],backgroundColor:['rgba(248,81,73,.85)','rgba(227,179,65,.85)','rgba(88,166,255,.85)','rgba(63,185,80,.85)','rgba(188,140,255,.85)','rgba(139,148,158,.5)'],borderColor:'#161b22',borderWidth:3}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'55%',
+      plugins:{legend:{labels:{color:'#ffffff',font:{size:11}}},tooltip:{callbacks:{label:c=>`${fmt(c.raw)} (${(c.raw/tm*100).toFixed(1)}%)`}}}
+    }
+  });
+
+  $('hhi').innerHTML=`<strong>HHI = ${hhi.toFixed(4)}</strong> — ${hhi>.25?'<span style="color:var(--red)">Concentración alta</span>':hhi>.15?'<span style="color:var(--yel)">Concentración moderada</span>':'<span style="color:var(--green)">Concentración baja</span>'}<br><span style="font-size:11px;display:block;margin-top:4px">Mayor a 0.25 = riesgo de dependencia de proveedor. Proveedor dominante: ${ps[0]?.[0]} con ${(ps[0]?.[1]?.m/tm*100||0).toFixed(1)}% del gasto.</span>`;
+}
+
+// ══ EJECUCION ═════════════════════════════════════════════════════════════════
+function buildEjecucion() {
+  const tm=DATA.reduce((s,r)=>s+Number(r.Monto_Total||0),0);
+  const mOC=DATA.filter(r=>r.Tiene_OC==='SI').reduce((s,r)=>s+Number(r.Monto_Total||0),0);
+  const mSin=tm-mOC;
+  const pct=(mOC/tm*100).toFixed(1);
+
+  $('kpi-ejec').innerHTML=`
+    <div class="kpi g"><div class="kpi-lbl">Monto con OC</div><div class="kpi-val">${fmt(mOC)}</div><div class="kpi-sub">${pct}% del presupuesto</div></div>
+    <div class="kpi r"><div class="kpi-lbl">Monto sin OC</div><div class="kpi-val">${fmt(mSin)}</div><div class="kpi-sub">${(100-Number(pct)).toFixed(1)}% pendiente</div></div>
+    <div class="kpi y"><div class="kpi-lbl">Ejecución monetaria</div><div class="kpi-val">${pct}%</div><div class="kpi-sub">Ponderado por valor</div></div>
+  `;
+
+  const em={};
+  DATA.forEach(r=>{if(!em[r.Rubro])em[r.Rubro]={t:0,o:0};em[r.Rubro].t+=Number(r.Monto_Total||0);if(r.Tiene_OC==='SI')em[r.Rubro].o+=Number(r.Monto_Total||0)});
+  const ea=Object.entries(em).map(([k,v])=>({r:k,p:v.t>0?v.o/v.t*100:0})).sort((a,b)=>b.p-a.p);
+  destroyChart('ch-ejec-r');
+  CH['ch-ejec-r']=new Chart($('ch-ejec-r'),{
+    type:'bar',
+    data:{labels:ea.map(e=>e.r),datasets:[{data:ea.map(e=>e.p),backgroundColor:ea.map(e=>e.p>=80?'rgba(63,185,80,.8)':e.p>=50?'rgba(227,179,65,.8)':'rgba(248,81,73,.75)'),borderRadius:3}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>c.raw.toFixed(1)+'%'}}},
+      scales:{x:{...AX_WHITE,min:0,max:110,ticks:{...AX_WHITE.ticks,callback:v=>v+'%'}},y:{...AX_NONE}}
+    }
+  });
+
+  destroyChart('ch-ejec-pie');
+  CH['ch-ejec-pie']=new Chart($('ch-ejec-pie'),{
+    type:'doughnut',
+    data:{labels:['Con OC','Sin OC'],datasets:[{data:[mOC,mSin],backgroundColor:['rgba(63,185,80,.85)','rgba(139,148,158,.45)'],borderColor:'#161b22',borderWidth:3}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'60%',
+      plugins:{legend:{labels:{color:'#ffffff'}},tooltip:{callbacks:{label:c=>`${fmt(c.raw)} (${(c.raw/tm*100).toFixed(1)}%)`}}}
+    }
+  });
+}
+
+// ══ DATOS ═════════════════════════════════════════════════════════════════════
+function buildDatos() {
+  const rubros=[...new Set(DATA.map(r=>r.Rubro))].sort();
+  $('fd-r').innerHTML='<option value="">Todos</option>'+rubros.map(r=>`<option>${r}</option>`).join('');
+  rDatos();
+}
+
+function rDatos() {
+  const fr=$('fd-r').value,fa=$('fd-a').value,fx=$('fd-x').value,fd=$('fd-d').value,fo=$('fd-o').value;
+  const rows=DATA.filter(r=>(!fr||r.Rubro===fr)&&(!fa||r.Clase_ABC_Monto===fa)&&(!fx||r.Clase_XYZ===fx)&&(!fd||r.Es_Desierto===fd)&&(!fo||r.Tiene_OC===fo)).sort((a,b)=>b.Monto_Total-a.Monto_Total);
+  $('data-cnt').textContent=rows.length.toLocaleString('es-AR')+' ítems';
+  document.querySelector('#t-datos tbody').innerHTML=rows.map(r=>`<tr>
+    <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.Descripcion}">${r.Descripcion}</td>
+    <td style="font-size:11px;color:var(--muted)">${r.Rubro}</td>
+    <td style="font-size:11px;max-width:110px;overflow:hidden;text-overflow:ellipsis">${r.Proveedor}</td>
+    <td>${badge(r.Clase_ABC_Monto)}</td><td>${badge(r.Clase_XYZ)}</td>
+    <td class="mono">${fmt(r.Monto_Total)}</td><td class="mono">${fmt(r.Justiprecio)}</td>
+    <td class="mono">${fmtN(r.Cantidad_Pedida)}</td>
+    <td>${badge(r.Tiene_OC,'')}</td><td>${badge(r.Es_Desierto,'')}</td>
+  </tr>`).join('');
+}
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
+buildAll();
+</script>
+</body>
+</html>
