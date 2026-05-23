@@ -1378,14 +1378,13 @@ with tab7:
 
             if st.session_state.oc_df_edit is None:
                 st.session_state.oc_df_edit = pd.DataFrame([{
-                    "✓":               True,
-                    "Renglón":         r.get("renglon",""),
-                    "Código":          r.get("codigo",""),
-                    "Descripción":     r.get("descripcion",""),
-                    "Marca":           r.get("marca",""),
-                    "Cantidad":        float(r.get("cantidad_num", 0)),
-                    "Precio unitario": float(r.get("importe_unitario_num", 0)),
-                    "Monto total":     float(r.get("importe_total_num", 0)),
+                    "✓":                True,
+                    "Renglón":          r.get("renglon",""),
+                    "Código":           r.get("codigo",""),
+                    "Descripción":      r.get("descripcion",""),
+                    "Cantidad":         float(r.get("cantidad_num", 0)),
+                    "Importe unitario": float(r.get("importe_unitario_num", 0)),
+                    "Importe total":    float(r.get("importe_total_num", 0)),
                 } for r in _renglones])
 
             _df_edit = st.data_editor(
@@ -1394,10 +1393,16 @@ with tab7:
                 num_rows="fixed",
                 hide_index=True,
                 column_config={
-                    "✓":               st.column_config.CheckboxColumn("✓", width="small"),
-                    "Cantidad":        st.column_config.NumberColumn(format="%.0f"),
-                    "Precio unitario": st.column_config.NumberColumn(format="$%.2f"),
-                    "Monto total":     st.column_config.NumberColumn(format="$%.2f"),
+                    "✓":                st.column_config.CheckboxColumn("✓", width="small"),
+                    "Cantidad":         st.column_config.NumberColumn(format="%.0f"),
+                    "Importe unitario": st.column_config.NumberColumn(
+                        format="$%.2f",
+                        help="Precio unitario del ítem según la OC"
+                    ),
+                    "Importe total":    st.column_config.NumberColumn(
+                        format="$%.2f",
+                        help="Importe total del renglón = Cantidad × Importe unitario"
+                    ),
                 },
                 key="oc_tabla_edit",
             )
@@ -1406,7 +1411,8 @@ with tab7:
             _incl = _df_edit[_df_edit["✓"]]
             _m1, _m2, _m3 = st.columns(3)
             _m1.metric("Incluidos",  len(_incl))
-            _m2.metric("Monto OC",   f"${_incl['Monto total'].sum():,.0f}")
+            _m2.metric("Importe total OC",
+                       f"${_incl['Importe total'].sum():,.0f}".replace(",","X").replace(".",",").replace("X","."))
             _m3.metric("Excluidos",  len(_df_edit) - len(_incl))
 
             # ── PASO 4: SOLICITUDES xlsx ──────────────────────────────────────
@@ -1435,10 +1441,9 @@ with tab7:
                         "renglon":              str(r["Renglón"]),
                         "codigo":               str(r["Código"]).strip().upper(),
                         "descripcion":          str(r["Descripción"]),
-                        "marca":                str(r.get("Marca","")),
                         "cantidad_num":         float(r["Cantidad"]),
-                        "importe_unitario_num": float(r["Precio unitario"]),
-                        "importe_total_num":    float(r["Monto total"]),
+                        "importe_unitario_num": float(r["Importe unitario"]),
+                        "importe_total_num":    float(r["Importe total"]),
                     } for _, r in _df_ok.iterrows()]
 
                     _tmp_xlsx = "/tmp/solicitudes_oc_input.xlsx"
