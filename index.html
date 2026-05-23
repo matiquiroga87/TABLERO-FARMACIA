@@ -105,7 +105,7 @@ body{background:var(--bg);color:var(--tx);font-family:'DM Sans',sans-serif;font-
 .mono{font-family:'DM Mono',monospace;font-size:12px;color:#fff}
 
 /* BADGES */
-.bx{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600}
+.bdg{display:inline-block;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600}
 .bA{background:rgba(63,185,80,.25);color:#3fb950}
 .bB{background:rgba(227,179,65,.25);color:#e3b341}
 .bC{background:rgba(139,148,158,.2);color:#c9d1d9}
@@ -538,7 +538,7 @@ function fmt(n){
 }
 function fmtN(n){return Number(n||0).toLocaleString('es-AR',{maximumFractionDigits:1})}
 function clr(c){return{A:'#3fb950',B:'#e3b341',C:'#8b949e',X:'#58a6ff',Y:'#e3b341',Z:'#8b949e'}[c]||'#8b949e'}
-function badge(v,p){const c=p!==undefined?p+v:v;return`<span class="bx b${c}">${v}</span>`}
+function badge(v,p){const c=p!==undefined?p+v:v;return`<span class="bdg b${c}">${v}</span>`}
 function dc(id){if(CH[id]){CH[id].destroy();delete CH[id]}}
 
 const AXw={ticks:{color:'#fff'},grid:{color:'rgba(255,255,255,.07)'},border:{display:false}};
