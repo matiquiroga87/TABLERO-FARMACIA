@@ -298,13 +298,14 @@ total_items_raw = len(df)  # con repetidos, para % internos
 pct_ejec     = n_con_oc / total_items_raw * 100 if total_items_raw > 0 else 0
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📊 Resumen General",
     "🔢 ABC por Monto",
     "🔄 ABC por Cantidad + XYZ",
     "🏭 Proveedores",
     "🏥 Detalle por Rubro",
     "📋 Datos",
+    "📥 Carga de OC",
 ])
 
 
@@ -1244,3 +1245,256 @@ with tab6:
         file_name="tablero_filtrado.xlsx",
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 7 — CARGA DE OC
+# ══════════════════════════════════════════════════════════════════════════════
+with tab7:
+
+    # ── Importar módulos OC ───────────────────────────────────────────────────
+    try:
+        import pdfplumber
+        from parsear_oc import parsear_oc
+        from cargar_oc  import aplicar_oc
+        PDF_OK = True
+    except ImportError as _ie:
+        PDF_OK = False
+        _ie_msg = str(_ie)
+
+    if not PDF_OK:
+        st.error(f"Falta instalar: `pip install pdfplumber`  ({_ie_msg})")
+        st.stop()
+
+    st.markdown("### 📥 Carga de Orden de Compra")
+    st.markdown(
+        "Subí el PDF de la OC · Verificá los datos extraídos · "
+        "Descargá el SOLICITUDES actualizado con N° OC, cantidad, precio y proveedor."
+    )
+
+    # ── Estado de sesión ──────────────────────────────────────────────────────
+    for _k, _v in [("oc_data",None),("oc_df_edit",None),
+                   ("oc_enc",{}),("oc_prov",{})]:
+        if _k not in st.session_state:
+            st.session_state[_k] = _v
+
+    # ── PASO 1: PDF ───────────────────────────────────────────────────────────
+    st.markdown("---")
+    col_pdf, col_info = st.columns([2, 1])
+
+    with col_pdf:
+        st.markdown("**Paso 1 — Subir PDF de la Orden de Compra**")
+        pdf_up = st.file_uploader(
+            "PDF de la OC (texto seleccionable)",
+            type=["pdf"], key="oc_pdf_uploader",
+            help="Solo se procesa la primera hoja. La hoja de remito se ignora.",
+        )
+
+    with col_info:
+        st.markdown("**Columnas que se actualizan en el Excel:**")
+        st.markdown("""
+| Col | Campo |
+|-----|-------|
+| **P** | N° de OC |
+| **M** | Proveedor *(si vacío)* |
+| **U** | Cantidad con OC 2026 |
+| **Y** | Precio Proveedor 2026 |
+| **AA** | Monto Total adjudicado |
+""")
+        st.info(
+            "**Prioridad de búsqueda:**\n"
+            "1. N° Solicitud + N° Renglón\n"
+            "2. N° Solicitud + Código\n"
+            "3. Código único en el archivo",
+            icon="🔍"
+        )
+
+    if pdf_up:
+        with st.spinner("Leyendo el PDF..."):
+            _pdf_bytes = pdf_up.read()
+            _tmp_pdf   = f"/tmp/oc_{pdf_up.name}"
+            with open(_tmp_pdf, "wb") as _f:
+                _f.write(_pdf_bytes)
+            _oc = parsear_oc(_tmp_pdf)
+            st.session_state.oc_data    = _oc
+            st.session_state.oc_enc     = dict(_oc["encabezado"])
+            st.session_state.oc_prov    = dict(_oc["proveedor"])
+            st.session_state.oc_df_edit = None
+
+        for _e in _oc.get("errores", []):
+            st.warning(f"⚠️ {_e}")
+
+    # ── PASO 2: Encabezado ────────────────────────────────────────────────────
+    if st.session_state.oc_data:
+        enc  = st.session_state.oc_enc
+        prov = st.session_state.oc_prov
+
+        st.markdown("---")
+        st.markdown("**Paso 2 — Verificar encabezado de la OC**")
+        st.caption("El N° Solicitud es la clave principal de búsqueda. Corregilo si no coincide con el PDF.")
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            enc["oc_completo"]   = st.text_input("N° de OC",    value=enc.get("oc_completo",""),   key="oc_num")
+            enc["fecha"]         = st.text_input("Fecha",        value=enc.get("fecha",""),         key="oc_fecha")
+        with c2:
+            enc["nro_solicitud"] = st.text_input(
+                "N° Solicitud ⬅ clave de búsqueda",
+                value=enc.get("nro_solicitud",""), key="oc_solic",
+                help="Columna K del SOLICITUDES. Si hay múltiples OC para distintas solicitudes, cada PDF se carga por separado."
+            )
+            enc["licitacion"]    = st.text_input("Licitación",   value=enc.get("licitacion",""),    key="oc_lic")
+        with c3:
+            prov["razon_social"] = st.text_input("Proveedor",    value=prov.get("razon_social",""), key="oc_prov_rs")
+            prov["cuit"]         = st.text_input("CUIT",         value=prov.get("cuit",""),         key="oc_cuit")
+
+        if not enc.get("nro_solicitud"):
+            st.error(
+                "❌ No se detectó el N° de Solicitud en el PDF. "
+                "Ingresalo manualmente arriba — es el número que figura en la columna K del Excel."
+            )
+
+        # ── PASO 3: Renglones ─────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("**Paso 3 — Revisar y editar renglones**")
+
+        _renglones = st.session_state.oc_data.get("renglones", [])
+
+        if not _renglones:
+            st.error("❌ No se pudieron extraer renglones del PDF.")
+            with st.expander("Ver texto extraído (diagnóstico)"):
+                st.text(st.session_state.oc_data.get("texto_raw","")[:3000])
+        else:
+            st.success(f"✅ Se detectaron **{len(_renglones)} renglones**.")
+            st.caption("Podés editar cualquier campo. Destildá **✓** para omitir un renglón.")
+
+            if st.session_state.oc_df_edit is None:
+                st.session_state.oc_df_edit = pd.DataFrame([{
+                    "✓":               True,
+                    "Renglón":         r.get("renglon",""),
+                    "Código":          r.get("codigo",""),
+                    "Descripción":     r.get("descripcion",""),
+                    "Marca":           r.get("marca",""),
+                    "Cantidad":        float(r.get("cantidad_num", 0)),
+                    "Precio unitario": float(r.get("importe_unitario_num", 0)),
+                    "Monto total":     float(r.get("importe_total_num", 0)),
+                } for r in _renglones])
+
+            _df_edit = st.data_editor(
+                st.session_state.oc_df_edit,
+                use_container_width=True,
+                num_rows="fixed",
+                hide_index=True,
+                column_config={
+                    "✓":               st.column_config.CheckboxColumn("✓", width="small"),
+                    "Cantidad":        st.column_config.NumberColumn(format="%.0f"),
+                    "Precio unitario": st.column_config.NumberColumn(format="$%.2f"),
+                    "Monto total":     st.column_config.NumberColumn(format="$%.2f"),
+                },
+                key="oc_tabla_edit",
+            )
+            st.session_state.oc_df_edit = _df_edit
+
+            _incl = _df_edit[_df_edit["✓"]]
+            _m1, _m2, _m3 = st.columns(3)
+            _m1.metric("Incluidos",  len(_incl))
+            _m2.metric("Monto OC",   f"${_incl['Monto total'].sum():,.0f}")
+            _m3.metric("Excluidos",  len(_df_edit) - len(_incl))
+
+            # ── PASO 4: SOLICITUDES xlsx ──────────────────────────────────────
+            st.markdown("---")
+            st.markdown("**Paso 4 — Subir SOLICITUDES_2026.xlsx**")
+            st.caption("El original no se modifica. Descargás una copia con los datos de la OC aplicados.")
+
+            _xlsx_up = st.file_uploader(
+                "SOLICITUDES_2026.xlsx",
+                type=["xlsx"], key="oc_xlsx_uploader",
+            )
+
+            # ── PASO 5: Aplicar ───────────────────────────────────────────────
+            if _xlsx_up:
+                _xlsx_bytes = _xlsx_up.read()
+                st.success(f"✅ {_xlsx_up.name} ({len(_xlsx_bytes)//1024} KB)")
+
+                st.markdown("---")
+                if st.button("🚀 Aplicar OC al archivo", type="primary",
+                             use_container_width=True, key="oc_aplicar"):
+
+                    _df_ok = st.session_state.oc_df_edit[
+                        st.session_state.oc_df_edit["✓"]
+                    ]
+                    _rengls_conf = [{
+                        "renglon":              str(r["Renglón"]),
+                        "codigo":               str(r["Código"]).strip().upper(),
+                        "descripcion":          str(r["Descripción"]),
+                        "marca":                str(r.get("Marca","")),
+                        "cantidad_num":         float(r["Cantidad"]),
+                        "importe_unitario_num": float(r["Precio unitario"]),
+                        "importe_total_num":    float(r["Monto total"]),
+                    } for _, r in _df_ok.iterrows()]
+
+                    _tmp_xlsx = "/tmp/solicitudes_oc_input.xlsx"
+                    with open(_tmp_xlsx, "wb") as _f:
+                        _f.write(_xlsx_bytes)
+
+                    with st.spinner("Buscando renglones y actualizando Excel..."):
+                        _wb_nuevo, _resultados = aplicar_oc(
+                            _tmp_xlsx,
+                            {"encabezado": enc, "proveedor": prov},
+                            _rengls_conf,
+                        )
+
+                    _df_res  = pd.DataFrame(_resultados)
+                    _ok_rows = _df_res[_df_res["estado"].str.startswith("✅")]
+                    _nok_rows= _df_res[_df_res["estado"].str.startswith("⚠")]
+
+                    _ra, _rb = st.columns(2)
+                    _ra.metric("✅ Renglones cargados", len(_ok_rows))
+                    _rb.metric("⚠️ No encontrados",     len(_nok_rows))
+
+                    if len(_ok_rows):
+                        st.success(f"Se actualizaron **{len(_ok_rows)} renglones** correctamente.")
+                    if len(_nok_rows):
+                        st.warning(
+                            f"**{len(_nok_rows)} renglones no encontrados.** "
+                            "Verificá que el N° de Solicitud del encabezado coincida "
+                            "con la columna K del Excel, y que el N° de renglón "
+                            "coincida con la columna O."
+                        )
+
+                    # Tabla de resultados con método de matching
+                    st.dataframe(
+                        _df_res[["renglon","codigo","descripcion","match","estado","hoja","fila"]].rename(columns={
+                            "renglon":"Renglón","codigo":"Código",
+                            "descripcion":"Descripción","match":"Encontrado por",
+                            "estado":"Estado","hoja":"Hoja","fila":"Fila",
+                        }),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+
+                    with st.expander("ℹ️ ¿Qué significa cada método de búsqueda?"):
+                        st.markdown("""
+| Método | Descripción |
+|---|---|
+| **Solicitud + Renglón** | Buscó por N° solicitud (col K) + N° renglón (col O). Método más confiable: identifica el renglón exacto aunque el código esté repetido en otras solicitudes. |
+| **Solicitud + Código** | Buscó por N° solicitud (col K) + código vademecum (col A). Usado cuando el renglón no coincide exactamente. |
+| **Código único** | El código vademecum aparece una sola vez en todo el archivo. Sin riesgo de confusión. |
+| **Código ambiguo** | El código aparece en más de una fila y no se pudo determinar a cuál corresponde. Requiere N° solicitud correcto. |
+| **⚠️ No encontrado** | Ningún método encontró coincidencia. Verificar manualmente. |
+""")
+
+                    # Descarga
+                    _buf = io.BytesIO()
+                    _wb_nuevo.save(_buf)
+                    _buf.seek(0)
+                    _oc_safe = enc.get("oc_completo","OC").replace("/","_")
+                    st.download_button(
+                        label=f"⬇ Descargar SOLICITUDES_2026_OC{_oc_safe}.xlsx",
+                        data=_buf.getvalue(),
+                        file_name=f"SOLICITUDES_2026_OC{_oc_safe}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                        type="primary",
+                        key="oc_descarga",
+                    )
