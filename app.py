@@ -298,7 +298,7 @@ total_items_raw = len(df)  # con repetidos, para % internos
 pct_ejec     = n_con_oc / total_items_raw * 100 if total_items_raw > 0 else 0
 
 # ── Tabs ─────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📊 Resumen General",
     "🔢 ABC por Monto",
     "🔄 ABC por Cantidad + XYZ",
@@ -306,6 +306,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "🏥 Detalle por Rubro",
     "📋 Datos",
     "📥 Carga de OC",
+    "🧮 Simuladores",
 ])
 
 
@@ -1498,3 +1499,455 @@ with tab7:
                         type="primary",
                         key="oc_descarga",
                     )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 8 — SIMULADORES
+# ══════════════════════════════════════════════════════════════════════════════
+with tab8:
+
+    st.markdown("### 🧮 Simuladores de licitación y presupuesto")
+    st.markdown(
+        "Herramientas para evaluar escenarios antes de tomar decisiones. "
+        "Los cambios son **solo visuales** — no modifican el archivo original."
+    )
+
+    sim1, sim2 = st.tabs([
+        "📈 Simulador de ampliaciones",
+        "💰 Impacto presupuestario",
+    ])
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # SIMULADOR 1 — AMPLIACIONES DE LICITACIÓN
+    # ─────────────────────────────────────────────────────────────────────────
+    with sim1:
+        st.markdown("#### Simulador de ampliaciones de licitación")
+        st.markdown(
+            "Calculá cuánto podés ampliar por rubro o por ítem, y el impacto "
+            "en el monto total. Las licitaciones pueden ampliarse hasta un "
+            "**20%** del monto original sin nueva licitación (art. 119 Ley 13.981)."
+        )
+
+        # ── Filtros ───────────────────────────────────────────────────────────
+        sa1, sa2, sa3 = st.columns(3)
+        with sa1:
+            amp_rubro = st.multiselect(
+                "Rubros a ampliar",
+                options=sorted(df["Rubro"].unique().tolist()),
+                default=[],
+                key="amp_rubros",
+                help="Dejá vacío para incluir todos los rubros",
+            )
+        with sa2:
+            amp_abc = st.multiselect(
+                "Clase ABC",
+                options=["A", "B", "C"],
+                default=["A", "B"],
+                key="amp_abc",
+                help="Clase A = top 80% del gasto. Lo más urgente.",
+            )
+        with sa3:
+            solo_con_oc = st.checkbox(
+                "Solo ítems con OC confirmada",
+                value=True,
+                key="amp_solo_oc",
+                help="Las ampliaciones aplican sobre ítems ya adjudicados con OC.",
+            )
+
+        # Porcentaje de ampliación
+        st.markdown("---")
+        pct_amp = st.slider(
+            "Porcentaje de ampliación (%)",
+            min_value=1, max_value=30, value=20, step=1,
+            key="amp_pct",
+            help="La ley permite hasta 20% sin nueva licitación. Podés simular más para planificación.",
+        )
+
+        # ── Cálculo ───────────────────────────────────────────────────────────
+        df_amp = df.copy()
+        if amp_rubro:
+            df_amp = df_amp[df_amp["Rubro"].isin(amp_rubro)]
+        if amp_abc:
+            df_amp = df_amp[df_amp["Clase_ABC_Monto"].isin(amp_abc)]
+        if solo_con_oc:
+            df_amp = df_amp[df_amp["Tiene_OC"] == "SI"]
+
+        df_amp = df_amp[df_amp["Monto_Total"] > 0].copy()
+        df_amp["Monto_Adicional"]   = df_amp["Monto_Total"] * (pct_amp / 100)
+        df_amp["Monto_Ampliado"]    = df_amp["Monto_Total"] * (1 + pct_amp / 100)
+        df_amp["Cantidad_Adicional"]= df_amp["Cantidad_Pedida"] * (pct_amp / 100)
+        df_amp["Cantidad_Ampliada"] = df_amp["Cantidad_Pedida"] * (1 + pct_amp / 100)
+
+        monto_orig  = df_amp["Monto_Total"].sum()
+        monto_adic  = df_amp["Monto_Adicional"].sum()
+        monto_total_amp = df_amp["Monto_Ampliado"].sum()
+
+        # ── KPIs ─────────────────────────────────────────────────────────────
+        k1, k2, k3, k4 = st.columns(4)
+        k1.metric(
+            "Ítems en el escenario",
+            f"{len(df_amp):,}",
+        )
+        k2.metric(
+            "Monto original seleccionado",
+            f"${monto_orig/1e6:.1f}M",
+        )
+        k3.metric(
+            f"Monto adicional (+{pct_amp}%)",
+            f"${monto_adic/1e6:.1f}M",
+            delta=f"+{pct_amp}% sobre lo adjudicado",
+        )
+        k4.metric(
+            "Monto total ampliado",
+            f"${monto_total_amp/1e6:.1f}M",
+            delta=f"+${monto_adic/1e6:.1f}M vs original",
+        )
+
+        # ── Gráfico por rubro ─────────────────────────────────────────────────
+        if len(df_amp) > 0:
+            st.markdown("---")
+            rubro_agg = (
+                df_amp.groupby("Rubro")
+                .agg(
+                    Monto_Original=("Monto_Total", "sum"),
+                    Monto_Adicional=("Monto_Adicional", "sum"),
+                )
+                .sort_values("Monto_Original", ascending=True)
+                .reset_index()
+            )
+
+            fig_amp = go.Figure()
+            fig_amp.add_bar(
+                y=rubro_agg["Rubro"],
+                x=rubro_agg["Monto_Original"],
+                name="Monto original",
+                orientation="h",
+                marker_color="rgba(88,166,255,.75)",
+            )
+            fig_amp.add_bar(
+                y=rubro_agg["Rubro"],
+                x=rubro_agg["Monto_Adicional"],
+                name=f"Ampliación +{pct_amp}%",
+                orientation="h",
+                marker_color="rgba(63,185,80,.8)",
+            )
+            fig_amp.update_layout({
+                **CHART_LAYOUT,
+                "barmode":  "stack",
+                "height":   max(300, len(rubro_agg) * 38),
+                "title":    f"Monto original vs ampliación +{pct_amp}% por rubro",
+                "legend":   dict(orientation="h", y=1.05, font=dict(color="#e2e8f0")),
+                "xaxis":    dict(title="Monto ($)", tickfont=dict(color="#e2e8f0"),
+                                 tickformat="$,.0f", gridcolor="rgba(255,255,255,.08)"),
+                "yaxis":    dict(tickfont=dict(color="#e2e8f0")),
+            })
+            st.plotly_chart(fig_amp, use_container_width=True)
+
+            # ── Tabla detalle ─────────────────────────────────────────────────
+            st.markdown("**Detalle por ítem**")
+            df_tabla_amp = (
+                df_amp[["Rubro","Descripcion","Proveedor","Clase_ABC_Monto",
+                         "Cantidad_Pedida","Cantidad_Adicional","Cantidad_Ampliada",
+                         "Justiprecio","Monto_Total","Monto_Adicional","Monto_Ampliado"]]
+                .sort_values("Monto_Adicional", ascending=False)
+                .rename(columns={
+                    "Clase_ABC_Monto": "ABC",
+                    "Cantidad_Pedida":    "Cant. original",
+                    "Cantidad_Adicional": f"Cant. +{pct_amp}%",
+                    "Cantidad_Ampliada":  "Cant. total",
+                    "Monto_Total":        "Monto original",
+                    "Monto_Adicional":    f"Monto +{pct_amp}%",
+                    "Monto_Ampliado":     "Monto total",
+                })
+            )
+            st.dataframe(
+                df_tabla_amp.style.format({
+                    "Cant. original":     "{:,.0f}",
+                    f"Cant. +{pct_amp}%": "{:,.1f}",
+                    "Cant. total":        "{:,.0f}",
+                    "Justiprecio":        "${:,.2f}",
+                    "Monto original":     "${:,.0f}",
+                    f"Monto +{pct_amp}%": "${:,.0f}",
+                    "Monto total":        "${:,.0f}",
+                }),
+                use_container_width=True,
+                height=400,
+                hide_index=True,
+            )
+
+            # ── Descarga ──────────────────────────────────────────────────────
+            buf_amp = io.BytesIO()
+            df_tabla_amp.to_excel(buf_amp, index=False)
+            st.download_button(
+                f"⬇ Descargar simulación de ampliación +{pct_amp}%",
+                data=buf_amp.getvalue(),
+                file_name=f"ampliacion_{pct_amp}pct.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_amp",
+            )
+        else:
+            st.info("No hay ítems que cumplan los filtros seleccionados.")
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # SIMULADOR 2 — IMPACTO PRESUPUESTARIO
+    # ─────────────────────────────────────────────────────────────────────────
+    with sim2:
+        st.markdown("#### Simulador de impacto presupuestario")
+        st.markdown(
+            "Aplicá variaciones de precio, cantidad o incorporación de desiertos "
+            "y visualizá el nuevo presupuesto requerido antes de presentar una solicitud."
+        )
+
+        # ── Escenarios ────────────────────────────────────────────────────────
+        st.markdown("---")
+        st.markdown("**Configurar escenario**")
+
+        esc1, esc2 = st.columns(2)
+
+        with esc1:
+            st.markdown("**Variación de precios**")
+            var_precio_global = st.slider(
+                "Variación global de justiprecio (%)",
+                min_value=-50, max_value=100, value=0, step=5,
+                key="esc_precio",
+                help="Simula inflación de precios o renegociación. 0 = sin cambio.",
+            )
+            st.caption("Podés también definir variaciones por clase:")
+            var_precio_A = st.slider("Variación clase A (%)", -50, 100, 0, 5, key="esc_pA")
+            var_precio_B = st.slider("Variación clase B (%)", -50, 100, 0, 5, key="esc_pB")
+            var_precio_C = st.slider("Variación clase C (%)", -50, 100, 0, 5, key="esc_pC")
+
+        with esc2:
+            st.markdown("**Incorporar desiertos**")
+            inc_desiertos = st.checkbox(
+                "Incluir ítems desiertos al presupuesto",
+                value=False, key="esc_des",
+                help="Simula el costo de re-licitar o comprar directamente los ítems sin oferentes.",
+            )
+            if inc_desiertos:
+                pct_precio_des = st.slider(
+                    "Precio estimado desiertos (% del justiprecio original)",
+                    50, 200, 120, 5, key="esc_des_pct",
+                    help="Los desiertos suelen comprarse por compra directa a mayor precio. 120% = 20% más caro.",
+                )
+            else:
+                pct_precio_des = 100
+
+            st.markdown("**Variación de cantidades**")
+            var_cantidad = st.slider(
+                "Variación global de cantidad (%)",
+                -50, 100, 0, 5, key="esc_cant",
+                help="Simula mayor o menor demanda proyectada.",
+            )
+            filtro_rubro_esc = st.multiselect(
+                "Aplicar solo a estos rubros (vacío = todos)",
+                options=sorted(df["Rubro"].unique().tolist()),
+                default=[], key="esc_rubros",
+            )
+
+        # ── Cálculo del escenario ─────────────────────────────────────────────
+        st.markdown("---")
+
+        df_esc = df.copy()
+
+        # Aplicar filtro de rubro si corresponde
+        if filtro_rubro_esc:
+            mask_rubro = df_esc["Rubro"].isin(filtro_rubro_esc)
+        else:
+            mask_rubro = pd.Series([True] * len(df_esc), index=df_esc.index)
+
+        # Precio base (justiprecio original)
+        df_esc["Precio_Sim"] = df_esc["Justiprecio"].copy()
+
+        # Aplicar variación por clase ABC dentro del filtro de rubro
+        for cls, var in [("A", var_precio_A), ("B", var_precio_B), ("C", var_precio_C)]:
+            mask = mask_rubro & (df_esc["Clase_ABC_Monto"] == cls)
+            df_esc.loc[mask, "Precio_Sim"] = (
+                df_esc.loc[mask, "Justiprecio"] * (1 + var / 100)
+            )
+
+        # Variación global encima de la por-clase (acumulativa)
+        if var_precio_global != 0:
+            df_esc.loc[mask_rubro, "Precio_Sim"] = (
+                df_esc.loc[mask_rubro, "Precio_Sim"] * (1 + var_precio_global / 100)
+            )
+
+        # Variación de cantidad
+        df_esc["Cantidad_Sim"] = df_esc["Cantidad_Pedida"].copy()
+        if var_cantidad != 0:
+            df_esc.loc[mask_rubro, "Cantidad_Sim"] = (
+                df_esc.loc[mask_rubro, "Cantidad_Pedida"] * (1 + var_cantidad / 100)
+            )
+
+        # Monto simulado para ítems adjudicados (no desiertos)
+        mask_adj = df_esc["Es_Desierto"] == "NO"
+        df_esc["Monto_Sim"] = 0.0
+        df_esc.loc[mask_adj, "Monto_Sim"] = (
+            df_esc.loc[mask_adj, "Precio_Sim"] *
+            df_esc.loc[mask_adj, "Cantidad_Sim"]
+        )
+
+        # Incorporar desiertos si se pidió
+        if inc_desiertos:
+            mask_des = df_esc["Es_Desierto"] == "SI"
+            df_esc.loc[mask_des, "Monto_Sim"] = (
+                df_esc.loc[mask_des, "Justiprecio"] *
+                df_esc.loc[mask_des, "Cantidad_Pedida"] *
+                (pct_precio_des / 100)
+            )
+
+        # Resultados globales
+        monto_base_esc = df_esc.loc[mask_adj, "Monto_Total"].sum()
+        monto_sim_esc  = df_esc["Monto_Sim"].sum()
+        delta_abs      = monto_sim_esc - monto_base_esc
+        delta_pct      = delta_abs / monto_base_esc * 100 if monto_base_esc > 0 else 0
+
+        # ── KPIs del escenario ────────────────────────────────────────────────
+        e1, e2, e3, e4 = st.columns(4)
+        e1.metric(
+            "Presupuesto base",
+            f"${monto_base_esc/1e6:.1f}M",
+            help="Monto total del SOLICITUDES sin cambios (solo adjudicados).",
+        )
+        e2.metric(
+            "Presupuesto simulado",
+            f"${monto_sim_esc/1e6:.1f}M",
+            delta=f"{delta_pct:+.1f}%",
+            delta_color="inverse" if delta_abs > 0 else "normal",
+        )
+        e3.metric(
+            "Diferencia absoluta",
+            f"${abs(delta_abs)/1e6:.1f}M",
+            delta="Aumento" if delta_abs > 0 else "Ahorro",
+            delta_color="inverse" if delta_abs > 0 else "normal",
+        )
+        e4.metric(
+            "Ítems desiertos incluidos",
+            f"{(df_esc['Es_Desierto']=='SI').sum() if inc_desiertos else 0}",
+            delta=f"${df_esc.loc[df_esc['Es_Desierto']=='SI','Monto_Sim'].sum()/1e6:.1f}M" if inc_desiertos else "No incluidos",
+        )
+
+        # ── Gráfico comparativo por rubro ─────────────────────────────────────
+        rub_comp = (
+            df_esc.groupby("Rubro")
+            .agg(
+                Base=("Monto_Total", lambda x: x[df_esc.loc[x.index, "Es_Desierto"] == "NO"].sum()),
+                Simulado=("Monto_Sim", "sum"),
+            )
+            .reset_index()
+        )
+        rub_comp["Delta"] = rub_comp["Simulado"] - rub_comp["Base"]
+        rub_comp = rub_comp.sort_values("Base", ascending=True)
+
+        fig_esc = go.Figure()
+        fig_esc.add_bar(
+            y=rub_comp["Rubro"], x=rub_comp["Base"],
+            name="Presupuesto base", orientation="h",
+            marker_color="rgba(88,166,255,.7)",
+        )
+        fig_esc.add_bar(
+            y=rub_comp["Rubro"],
+            x=rub_comp["Delta"].clip(lower=0),
+            name="Incremento simulado", orientation="h",
+            marker_color="rgba(248,81,73,.75)",
+        )
+        fig_esc.add_bar(
+            y=rub_comp["Rubro"],
+            x=rub_comp["Delta"].clip(upper=0).abs(),
+            name="Reducción simulada", orientation="h",
+            marker_color="rgba(63,185,80,.75)",
+        )
+        fig_esc.update_layout({
+            **CHART_LAYOUT,
+            "barmode":  "stack",
+            "height":   max(320, len(rub_comp) * 38),
+            "title":    "Comparativa presupuesto base vs escenario simulado",
+            "legend":   dict(orientation="h", y=1.05, font=dict(color="#e2e8f0")),
+            "xaxis":    dict(title="Monto ($)", tickfont=dict(color="#e2e8f0"),
+                             tickformat="$,.0f", gridcolor="rgba(255,255,255,.08)"),
+            "yaxis":    dict(tickfont=dict(color="#e2e8f0")),
+        })
+        st.plotly_chart(fig_esc, use_container_width=True)
+
+        # ── Tabla comparativa detallada ───────────────────────────────────────
+        st.markdown("**Comparativa detallada por ítem**")
+        with st.expander("Ver tabla completa de ítems con variación"):
+            df_tabla_esc = df_esc[df_esc["Monto_Sim"] > 0].copy()
+            df_tabla_esc["Variación $"] = df_tabla_esc["Monto_Sim"] - df_tabla_esc["Monto_Total"]
+            df_tabla_esc["Variación %"] = np.where(
+                df_tabla_esc["Monto_Total"] > 0,
+                df_tabla_esc["Variación $"] / df_tabla_esc["Monto_Total"] * 100,
+                0,
+            )
+            df_tabla_esc = df_tabla_esc.sort_values("Variación $", ascending=False)
+            st.dataframe(
+                df_tabla_esc[[
+                    "Rubro","Descripcion","Clase_ABC_Monto","Es_Desierto",
+                    "Justiprecio","Precio_Sim",
+                    "Cantidad_Pedida","Cantidad_Sim",
+                    "Monto_Total","Monto_Sim","Variación $","Variación %",
+                ]].rename(columns={
+                    "Clase_ABC_Monto": "ABC",
+                    "Es_Desierto":     "Desierto",
+                    "Justiprecio":     "Precio base",
+                    "Precio_Sim":      "Precio sim.",
+                    "Cantidad_Pedida": "Cant. base",
+                    "Cantidad_Sim":    "Cant. sim.",
+                    "Monto_Total":     "Monto base",
+                    "Monto_Sim":       "Monto sim.",
+                }).style.format({
+                    "Precio base":  "${:,.2f}",
+                    "Precio sim.":  "${:,.2f}",
+                    "Cant. base":   "{:,.0f}",
+                    "Cant. sim.":   "{:,.0f}",
+                    "Monto base":   "${:,.0f}",
+                    "Monto sim.":   "${:,.0f}",
+                    "Variación $":  "${:+,.0f}",
+                    "Variación %":  "{:+.1f}%",
+                }),
+                use_container_width=True,
+                height=420,
+                hide_index=True,
+            )
+
+        # ── Resumen por clase ABC ─────────────────────────────────────────────
+        st.markdown("**Impacto por clase ABC**")
+        abc_comp = (
+            df_esc[df_esc["Es_Desierto"] == "NO"]
+            .groupby("Clase_ABC_Monto")
+            .agg(Base=("Monto_Total","sum"), Simulado=("Monto_Sim","sum"))
+            .reindex(["A","B","C"]).fillna(0).reset_index()
+        )
+        abc_comp["Delta $"] = abc_comp["Simulado"] - abc_comp["Base"]
+        abc_comp["Delta %"] = np.where(
+            abc_comp["Base"] > 0,
+            abc_comp["Delta $"] / abc_comp["Base"] * 100,
+            0,
+        )
+        st.dataframe(
+            abc_comp.rename(columns={"Clase_ABC_Monto":"Clase"})
+            .style.format({
+                "Base":     "${:,.0f}",
+                "Simulado": "${:,.0f}",
+                "Delta $":  "${:+,.0f}",
+                "Delta %":  "{:+.1f}%",
+            }),
+            use_container_width=True,
+            hide_index=True,
+            height=160,
+        )
+
+        # ── Descarga ──────────────────────────────────────────────────────────
+        buf_esc = io.BytesIO()
+        df_esc[df_esc["Monto_Sim"] > 0][[
+            "Rubro","Descripcion","Clase_ABC_Monto","Es_Desierto",
+            "Justiprecio","Precio_Sim","Cantidad_Pedida","Cantidad_Sim",
+            "Monto_Total","Monto_Sim",
+        ]].to_excel(buf_esc, index=False)
+        st.download_button(
+            "⬇ Descargar escenario simulado como Excel",
+            data=buf_esc.getvalue(),
+            file_name="escenario_presupuestario.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key="dl_esc",
+        )
