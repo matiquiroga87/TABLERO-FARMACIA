@@ -273,16 +273,23 @@ if not uploaded:
         <br>
         <p style="color:#94a3b8;font-size:.85rem">
             Incluye: ABC por monto · ABC por cantidad · Análisis XYZ · Concentración de proveedores ·<br>
-            Ejecución de presupuesto · Matriz ABC-XYZ
+            Ejecución de presupuesto · Matriz ABC-XYZ · Simuladores · Carga de OC
         </p>
     </div>
     """, unsafe_allow_html=True)
     st.stop()
 
+# Fallback vacío — st.stop() ya frenó la ejecución, esto es solo para evitar NameError
+import pandas as _pd
+df_raw = _pd.DataFrame() if "df_raw" not in dir() else df_raw
+
 # Apply filters
-df = df_raw[df_raw["Rubro"].isin(rubro_sel)].copy()
-if not show_desiertos:
-    df = df[~df["Es_Desierto"]]
+if len(df_raw) == 0:
+    df = _pd.DataFrame()
+else:
+    df = df_raw[df_raw["Rubro"].isin(rubro_sel)].copy()
+    if not show_desiertos:
+        df = df[~df["Es_Desierto"]]
 
 total_monto  = df["Monto"].sum()
 n_desiertos  = int(df["Es_Desierto"].sum())
@@ -1505,6 +1512,18 @@ with tab7:
 # TAB 8 — SIMULADORES
 # ══════════════════════════════════════════════════════════════════════════════
 with tab8:
+
+    # Guard: verificar que haya datos cargados antes de ejecutar cualquier cálculo
+    if not uploaded:
+        st.info("📂 Subí el archivo **SOLICITUDES_2026.xlsx** desde la barra lateral para usar los simuladores.")
+        st.stop()
+
+    # Verificar que las columnas necesarias existan
+    cols_requeridas = ["Clase_ABC_Monto", "Monto_Total", "Justiprecio", "Cantidad_Pedida", "Rubro"]
+    cols_faltantes = [c for c in cols_requeridas if c not in df.columns]
+    if cols_faltantes:
+        st.error(f"Faltan columnas en el archivo: {cols_faltantes}")
+        st.stop()
 
     st.markdown("### 🧮 Simuladores de licitación y presupuesto")
     st.markdown(
