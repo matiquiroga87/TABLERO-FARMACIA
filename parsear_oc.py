@@ -3,29 +3,14 @@ parsear_oc.py
 =============
 Parser de PDFs de Órdenes de Compra — HIGA Oscar Alende
 
-Tipos de licitación reconocidos:
-  - Licitación Privada Nro. X / YYYY
-  - Procedimiento Abreviado Nro. X / YYYY
-
-Bloque ADJUDICATARIO:
-  - Razón Social (campo "Razón Social:" o primer texto después de ADJUDICATARIO)
-  - CUIT proveedor (distinto al del hospital: 30-62698339-8)
-
-Renglones — campos que se extraen:
-  renglon          → número de renglón
-  codigo           → código vademecum (col A del SOLICITUDES)
-  cod_sigaf        → código SIGAF (referencia, no se carga al Excel)
-  descripcion      → SOLO la descripción del medicamento (limpiada)
-  cantidad         → cantidad numérica
-  importe_unitario → precio unitario (formato argentino $X.XXX,XX)
-  importe_total    → importe total   (formato argentino $X.XXX,XX)
-
-Cambios vs versión anterior:
-  - Se eliminó el campo "marca" (no figura en la OC)
-  - La descripción se limpia de cantidad, importe y otros datos pegados
-  - Se reconocen ambos tipos de licitación
-  - El proveedor se extrae del campo "Razón Social" dentro del bloque ADJUDICATARIO
-  - La cantidad se extrae de la celda correcta (no de la descripción)
+Estructura del PDF (SIGAF Buenos Aires):
+  - La tabla de renglones es detectada por pdfplumber como UNA SOLA FILA
+    donde cada columna contiene todos los valores separados por \\n.
+  - La estrategia correcta es: detectar esa fila fusionada y hacer zip
+    por columnas (Renglón, Código, Cantidad, Imp.Unitario, Imp.Total).
+  - La descripción se extrae del texto crudo usando los números de renglón
+    como anclas, ya que pdfplumber la fusiona en un bloque único.
+  - Fallback: parseo línea por línea del texto crudo.
 """
 
 import re
@@ -41,6 +26,7 @@ def limpiar_monto(s: str) -> float:
         return 0.0
     s = str(s).strip().replace("$", "").replace(" ", "")
     s = s.replace(".", "").replace(",", ".")
+    # Quitar decimales extras (ej: 2.780,0000 → 2780.0)
     try:
         return float(s)
     except ValueError:
@@ -51,12 +37,10 @@ def limpiar_cantidad(s: str) -> float:
     """Convierte '1.500' o '1500' o '1.500,00' → 1500.0"""
     if not s:
         return 0.0
-    s = str(s).strip().replace(" ", "")
-    # Si tiene coma decimal: formato argentino
+    s = str(s).strip().replace("$", "").replace(" ", "")
     if "," in s:
         s = s.replace(".", "").replace(",", ".")
     else:
-        # Solo puntos → separador de miles
         s = s.replace(".", "")
     try:
         return float(s)
@@ -70,33 +54,56 @@ def buscar_campo(texto: str, patron: str, grupo: int = 1) -> str:
 
 
 def limpiar_descripcion(texto: str) -> str:
-    """
-    Elimina de la celda de descripción todo lo que no sea la descripción:
-    - Números de cantidad pegados al inicio o al final
-    - Importes con $ o formato numérico
-    - Palabras clave como MARCA:, COD., SIGAF, etc.
-    - Códigos alfanuméricos de tipo M1234567 o 01234-5678
-    """
-    # Eliminar importes ($X.XXX,XX o X.XXX,XX)
-    texto = re.sub(r'\$?\s*\d{1,3}(?:\.\d{3})*,\d{2}', '', texto)
-    # Eliminar cantidades puras al final (número seguido de fin o espacio+número)
+    """Limpia la descripción de cantidades, importes y etiquetas pegadas."""
+    texto = re.sub(r'\$?\s*\d{1,3}(?:\.\d{3})*,\d{2,4}', '', texto)
     texto = re.sub(r'\s+\d+(?:[.,]\d+)?\s*$', '', texto)
     texto = re.sub(r'^\s*\d+(?:[.,]\d+)?\s+', '', texto)
-    # Eliminar etiquetas de marca/código pegadas
     texto = re.sub(r'(?:MARCA|BRAND|COD\.?|COD\.?\s*SIGAF)[:\s]\S+', '', texto, flags=re.IGNORECASE)
-    # Eliminar códigos tipo 01894-0074 que a veces se pegan a la descripción
     texto = re.sub(r'\b\d{5}-\d{4}\b', '', texto)
-    # Limpiar espacios múltiples
     texto = re.sub(r'\s{2,}', ' ', texto).strip()
     return texto
+
+
+def extraer_descripcion_desde_texto(texto: str, renglon: str, siguiente_renglon: str = None) -> str:
+    """
+    Extrae la descripción de un renglón usando el texto crudo.
+    Busca el bloque entre el renglón actual y el siguiente.
+    El formato de cada línea de renglón en el texto crudo es:
+      3 M2022228 99994 DESCRIPCION... 2.5.2 1.500 $ X,XX $ X,XX
+    """
+    # Patrón: número de renglón + código + descripción hasta fin de la línea
+    patron_reng = (
+        r'^\s*' + re.escape(str(renglon)) +
+        r'\s+[A-Z0-9]{4,}\s+\S+\s+'   # código + cód.sigaf
+        r'(.+?)(?:\s+\d+\.\d+\.\d+)'  # descripción hasta imputación (X.X.X)
+    )
+    m = re.search(patron_reng, texto, re.MULTILINE)
+    if m:
+        desc = m.group(1).strip()
+        # Limpiar cantidad e importes que pudieran haberse colado
+        desc = re.sub(r'\s+[\d.]+(?:,\d+)?\s+\$.*$', '', desc)
+        return desc.strip()
+
+    # Fallback: buscar la línea completa y extraer la parte de descripción
+    patron_simple = r'^\s*' + re.escape(str(renglon)) + r'\s+[A-Z0-9]{4,}\s+\S+\s+(.+)$'
+    m2 = re.search(patron_simple, texto, re.MULTILINE)
+    if m2:
+        linea = m2.group(1)
+        # Quitar desde la imputación en adelante (patrón X.X.X)
+        linea = re.split(r'\s+\d+\.\d+\.\d+', linea)[0]
+        return linea.strip()
+
+    return ""
 
 
 # ── Parser principal ──────────────────────────────────────────────────────────
 
 def parsear_oc(ruta_pdf: str) -> dict:
     """
-    Lee la primera página del PDF y devuelve la estructura completa de la OC.
-    La segunda página (remito/firma) se ignora.
+    Lee el PDF y devuelve la estructura completa de la OC.
+    Estrategia para tablas SIGAF (columnas fusionadas en una sola fila):
+      zip de columnas Renglón / Código / Cantidad / Imp.Unitario / Imp.Total
+    La descripción se extrae del texto crudo.
     """
     resultado = {
         "encabezado": {},
@@ -107,6 +114,7 @@ def parsear_oc(ruta_pdf: str) -> dict:
         "errores":    [],
     }
 
+    # ── Extraer texto de página 1 ─────────────────────────────────────────────
     try:
         with pdfplumber.open(ruta_pdf) as pdf:
             pagina = pdf.pages[0]
@@ -119,9 +127,9 @@ def parsear_oc(ruta_pdf: str) -> dict:
     # ── ENCABEZADO ────────────────────────────────────────────────────────────
     enc = {}
 
-    # N° OC: "Nro. OC 222 / 2026"
+    # N° OC: "Nro. de O.C.:283 / 2026" o "Nro. OC 222 / 2026"
     m_oc = re.search(
-        r'(?:Nro\.?\s*OC|Orden\s+de\s+Compra\s+N[°º]?|OC\s*N[°º]?)'
+        r'(?:Nro\.?\s*(?:de\s*)?O\.?C\.?|Orden\s+de\s+Compra\s+N[°º]?|OC\s*N[°º]?)'
         r'[:\s]*(\d+)\s*/\s*(\d{4})',
         texto, re.IGNORECASE
     )
@@ -137,28 +145,24 @@ def parsear_oc(ruta_pdf: str) -> dict:
         resultado["errores"].append("No se encontró N° de OC")
 
     # Fecha
-    enc["fecha"] = buscar_campo(texto, r'Fecha[:\s]+(\d{1,2}/\d{1,2}/\d{4})')
+    enc["fecha"] = buscar_campo(texto, r'FECHA[:\s]+(\d{1,2}/\d{1,2}/\d{4})')
     if not enc["fecha"]:
         m_f = re.search(r'\b(\d{1,2}/\d{1,2}/20\d{2})\b', texto[:800])
         enc["fecha"] = m_f.group(1) if m_f else ""
 
-    # Tipo de licitación — reconoce ambos formatos:
-    #   "Licitación Privada Nro. 5 / 2026"
-    #   "Procedimiento Abreviado Nro. 12 / 2026"
+    # Tipo de licitación
     m_lic = re.search(
         r'((?:Licitaci[oó]n\s+Privada|Procedimiento\s+Abreviado)'
         r'(?:\s+Nro\.?\s*\d+\s*/\s*\d{4})?)',
         texto, re.IGNORECASE
     )
-    enc["licitacion"] = m_lic.group(1).strip() if m_lic else buscar_campo(
-        texto, r'Licitaci[oó]n[:\s]+(.+?)(?:\n|Solicitud|Expediente)')
+    enc["licitacion"] = m_lic.group(1).strip() if m_lic else ""
 
     # N° Solicitud
     enc["nro_solicitud"] = buscar_campo(texto,
-        r'Solicitud\s+Nro\.?\s*[:\s]*(\d+)')
+        r'SOLICITUD\s+Nro\.?\s*[:\s]*(\d+)')
     if not enc["nro_solicitud"]:
-        enc["nro_solicitud"] = buscar_campo(texto,
-            r'N[°º]\s*Solicitud[:\s]*(\d+)')
+        enc["nro_solicitud"] = buscar_campo(texto, r'N[°º]\s*Solicitud[:\s]*(\d+)')
 
     # Expediente
     enc["expediente"] = buscar_campo(texto, r'(EX-\d{4}-\d+[\w\-]*)')
@@ -168,22 +172,22 @@ def parsear_oc(ruta_pdf: str) -> dict:
     # ── PROVEEDOR ─────────────────────────────────────────────────────────────
     prov = {}
 
-    # Razón Social: buscar dentro del bloque ADJUDICATARIO
-    # El campo aparece como "Razón Social INNOVATE PHARMA S.A." o
-    # "Razón Social: INNOVATE PHARMA S.A."
+    # Razón Social: está en la misma línea que Destino, separados por espacios
+    # Formato: "Razón Social: R.C. RADIOLOGIA CASTELAR S.R.L Destino: ..."
+    # Se corta ante 2+ espacios (separador de columnas) o palabras clave
     m_rs = re.search(
-        r'Raz[oó]n\s+Social[:\s]+(.+?)(?:\n|CUIT|C\.U\.I\.T\.)',
+        r'Raz[oó]n\s+Social:\s*(.+?)(?:\s{2,}|(?:\s+)(?:Destino:|Domicilio:|CUIT:|Registro\s+de|CBU:))',
         texto, re.IGNORECASE
     )
     if m_rs:
         prov["razon_social"] = m_rs.group(1).strip()
     else:
-        # Fallback: primer texto después de ADJUDICATARIO antes del CUIT
-        m_adj = re.search(
-            r'ADJUDICATARIO[:\s]*\n?\s*(.+?)(?:\n|CUIT|C\.U\.I\.T)',
-            texto, re.IGNORECASE
-        )
-        prov["razon_social"] = m_adj.group(1).strip() if m_adj else ""
+        # Fallback: capturar hasta fin de línea
+        m_rs2 = re.search(r'Raz[oó]n\s+Social:\s*(.+?)$', texto, re.IGNORECASE | re.MULTILINE)
+        razon = m_rs2.group(1).strip() if m_rs2 else ""
+        # Quitar "Destino:" y todo lo que sigue si quedó pegado
+        razon = re.split(r'\s+Destino:', razon, flags=re.IGNORECASE)[0].strip()
+        prov["razon_social"] = razon
 
     # CUIT proveedor — excluir el CUIT del hospital
     CUIT_HOSPITAL = "30626983398"
@@ -196,26 +200,29 @@ def parsear_oc(ruta_pdf: str) -> dict:
     # ── RENGLONES ─────────────────────────────────────────────────────────────
     renglones = []
 
-    # Intento 1: extract_tables() de pdfplumber
+    # Estrategia A: tabla SIGAF con columnas fusionadas en una sola fila
+    # pdfplumber devuelve la tabla como 2 filas: header + 1 fila con todo junto
     try:
         with pdfplumber.open(ruta_pdf) as pdf:
             pagina = pdf.pages[0]
             tablas = pagina.extract_tables()
+
             for tabla in (tablas or []):
                 if not tabla or len(tabla) < 2:
                     continue
+
                 header = [str(c).lower().strip() if c else "" for c in tabla[0]]
-                # Normalizar tildes para comparar
-                header_norm = [h.replace("ó","o").replace("é","e")
-                                .replace("ú","u").replace("í","i") for h in header]
+                header_norm = [
+                    h.replace("ó","o").replace("é","e").replace("ú","u")
+                     .replace("í","i").replace("á","a") for h in header
+                ]
 
-                tiene_renglon  = any("renglon" in h for h in header_norm)
+                # Verificar que tiene las columnas mínimas necesarias
+                tiene_renglon  = any(kw in h for h in header_norm for kw in ["renglon","reng"])
                 tiene_cantidad = any("cantidad" in h for h in header_norm)
-
                 if not (tiene_renglon and tiene_cantidad):
                     continue
 
-                # Mapeo de columnas: busca la primera que contenga el keyword
                 def idx_col(keywords):
                     for kw in keywords:
                         for i, h in enumerate(header_norm):
@@ -223,12 +230,18 @@ def parsear_oc(ruta_pdf: str) -> dict:
                                 return i
                     return None
 
-                i_reng  = idx_col(["renglon"])
+                i_reng  = idx_col(["renglon", "reng"])
                 i_cod   = idx_col(["codigo", "cod"])
-                i_desc  = idx_col(["descripcion"])
                 i_cant  = idx_col(["cantidad"])
-                i_uunit = idx_col(["unitario", "unit"])
-                i_total = idx_col(["importe total", "total"])
+                i_uunit = idx_col(["unitario", "unit", "precio"])
+                i_total = None
+                # Importe Total: evitar confundir con Unitario
+                for i, h in enumerate(header_norm):
+                    if "total" in h and i != i_uunit:
+                        i_total = i
+                        break
+                if i_total is None:
+                    i_total = idx_col(["importe total", "total"])
 
                 def celda(fila, idx):
                     if idx is None or idx >= len(fila):
@@ -239,36 +252,77 @@ def parsear_oc(ruta_pdf: str) -> dict:
                 for fila in tabla[1:]:
                     if not fila or not any(fila):
                         continue
-                    reng_num = celda(fila, i_reng)
-                    if not reng_num or not re.match(r'^\d+$', reng_num.strip()):
-                        continue
 
-                    desc_raw  = celda(fila, i_desc)
-                    cant_raw  = celda(fila, i_cant)
-                    imp_u_raw = celda(fila, i_uunit)
-                    imp_t_raw = celda(fila, i_total)
+                    col_reng = celda(fila, i_reng)
+                    col_cod  = celda(fila, i_cod)
+                    col_cant = celda(fila, i_cant)
+                    col_uunt = celda(fila, i_uunit)
+                    col_tot  = celda(fila, i_total)
 
-                    # Limpiar descripción
-                    descripcion = limpiar_descripcion(desc_raw)
+                    # Detectar si es la fila "fusionada SIGAF":
+                    # la celda de Renglón contiene múltiples valores separados por \n
+                    rengs_lista  = [r.strip() for r in col_reng.split("\n") if r.strip() and re.match(r'^\d+$', r.strip())]
+                    cods_lista   = [c.strip() for c in col_cod.split("\n")  if c.strip() and re.match(r'^[A-Z0-9]{4,}$', c.strip())]
+                    cants_lista  = [c.strip() for c in col_cant.split("\n") if c.strip()]
+                    uunts_lista  = [c.strip() for c in col_uunt.split("\n") if c.strip()]
+                    tots_lista   = [c.strip() for c in col_tot.split("\n")  if c.strip()]
 
-                    renglones.append({
-                        "renglon":              reng_num.strip(),
-                        "codigo":               celda(fila, i_cod),
-                        "cod_sigaf":            "",
-                        "descripcion":          descripcion,
-                        "cantidad":             cant_raw,
-                        "importe_unitario":     imp_u_raw,
-                        "importe_total":        imp_t_raw,
-                        "cantidad_num":         limpiar_cantidad(cant_raw),
-                        "importe_unitario_num": limpiar_monto(imp_u_raw),
-                        "importe_total_num":    limpiar_monto(imp_t_raw),
-                    })
-                break  # Primera tabla válida encontrada
+                    es_fusionada = len(rengs_lista) > 1
+
+                    if es_fusionada:
+                        # Zip por columnas — la descripción se extrae del texto crudo
+                        n = len(rengs_lista)
+                        # Asegurar que todas las listas tengan longitud n
+                        def pad(lst, n):
+                            return (lst + [""] * n)[:n]
+                        cods_lista  = pad(cods_lista, n)
+                        cants_lista = pad(cants_lista, n)
+                        uunts_lista = pad(uunts_lista, n)
+                        tots_lista  = pad(tots_lista, n)
+
+                        siguientes = rengs_lista[1:] + [None]
+                        for reng_num, cod, cant, uunt, tot, sig in zip(
+                            rengs_lista, cods_lista, cants_lista,
+                            uunts_lista, tots_lista, siguientes
+                        ):
+                            desc = extraer_descripcion_desde_texto(texto, reng_num, sig)
+                            renglones.append({
+                                "renglon":              reng_num,
+                                "codigo":               cod,
+                                "cod_sigaf":            "",
+                                "descripcion":          limpiar_descripcion(desc),
+                                "cantidad":             cant,
+                                "importe_unitario":     uunt,
+                                "importe_total":        tot,
+                                "cantidad_num":         limpiar_cantidad(cant),
+                                "importe_unitario_num": limpiar_monto(uunt),
+                                "importe_total_num":    limpiar_monto(tot),
+                            })
+                        break  # Tabla procesada
+
+                    else:
+                        # Fila normal (1 renglón por fila)
+                        reng_num = col_reng.strip()
+                        if not reng_num or not re.match(r'^\d+$', reng_num):
+                            continue
+                        desc = extraer_descripcion_desde_texto(texto, reng_num)
+                        renglones.append({
+                            "renglon":              reng_num,
+                            "codigo":               col_cod,
+                            "cod_sigaf":            "",
+                            "descripcion":          limpiar_descripcion(desc) or col_cod,
+                            "cantidad":             col_cant,
+                            "importe_unitario":     col_uunt,
+                            "importe_total":        col_tot,
+                            "cantidad_num":         limpiar_cantidad(col_cant),
+                            "importe_unitario_num": limpiar_monto(col_uunt),
+                            "importe_total_num":    limpiar_monto(col_tot),
+                        })
 
     except Exception as e:
         resultado["errores"].append(f"Error extrayendo tabla: {e}")
 
-    # Intento 2: fallback texto línea por línea
+    # Estrategia B: fallback texto línea por línea
     if not renglones:
         renglones = _parsear_renglones_texto(texto, resultado["errores"])
 
@@ -276,12 +330,9 @@ def parsear_oc(ruta_pdf: str) -> dict:
 
     # ── PIE ───────────────────────────────────────────────────────────────────
     pie = {}
-    pie["subtotal"] = limpiar_monto(buscar_campo(texto,
-        r'Subtotal[:\s]+\$?([\d.,]+)'))
-    pie["iva"]      = limpiar_monto(buscar_campo(texto,
-        r'IVA[:\s]+\$?([\d.,]+)'))
-    pie["total"]    = limpiar_monto(buscar_campo(texto,
-        r'TOTAL[:\s]+\$?([\d.,]+)'))
+    pie["subtotal"] = limpiar_monto(buscar_campo(texto, r'SubTotal[:\s]+\$?([\d.,]+)'))
+    pie["iva"]      = limpiar_monto(buscar_campo(texto, r'I\.V\.A\.[:\s]+\$?([\d.,]+)'))
+    pie["total"]    = limpiar_monto(buscar_campo(texto, r'TOTAL[:\s]+\$?([\d.,]+)'))
     resultado["pie"] = pie
 
     return resultado
@@ -291,12 +342,9 @@ def parsear_oc(ruta_pdf: str) -> dict:
 
 def _parsear_renglones_texto(texto: str, errores: list) -> list:
     """
-    Fallback cuando extract_tables() no encuentra tabla estructurada.
-    Parsea el texto buscando líneas que empiecen con número de renglón + código.
-
-    Formato esperado por línea:
-      33  M3201130  RITUXIMAB FCO.AMPOLLA...
-      (siguiente línea puede tener cantidad e importes)
+    Fallback cuando extract_tables() no produce resultados útiles.
+    Formato por línea del texto crudo SIGAF:
+      3 M2022228 99994 DESCRIPCION... 2.5.2 1.500 $ X,XX $ X,XX
     """
     renglones = []
     lineas    = texto.split("\n")
@@ -305,70 +353,36 @@ def _parsear_renglones_texto(texto: str, errores: list) -> list:
     while i < len(lineas):
         linea = lineas[i].strip()
 
-        # Inicio de renglón: número + código alfanumérico + texto
-        m_reng = re.match(r'^(\d{1,3})\s+([A-Z0-9]{5,})\s+(.+)$', linea)
-        if not m_reng:
+        # Renglón: número + código + (cód.sigaf opcional) + descripción
+        # El importe unitario puede tener 4 decimales: $2.780,0000
+        m_reng = re.match(
+            r'^(\d{1,3})\s+([A-Z][A-Z0-9]{3,})\s+(\S+)\s+(.+?)\s+'
+            r'(\d+\.\d+\.\d+)\s+'           # imputación X.X.X
+            r'([\d.]+(?:,\d+)?)\s+'         # cantidad
+            r'\$\s*([\d.]+,\d+)\s+'         # importe unitario
+            r'\$\s*([\d.]+,\d+)',            # importe total
+            linea
+        )
+        if m_reng:
+            renglones.append({
+                "renglon":              m_reng.group(1),
+                "codigo":               m_reng.group(2),
+                "cod_sigaf":            m_reng.group(3),
+                "descripcion":          limpiar_descripcion(m_reng.group(4)),
+                "cantidad":             m_reng.group(6),
+                "importe_unitario":     m_reng.group(7),
+                "importe_total":        m_reng.group(8),
+                "cantidad_num":         limpiar_cantidad(m_reng.group(6)),
+                "importe_unitario_num": limpiar_monto(m_reng.group(7)),
+                "importe_total_num":    limpiar_monto(m_reng.group(8)),
+            })
             i += 1
             continue
 
-        reng_num    = m_reng.group(1)
-        codigo      = m_reng.group(2)
-        desc_inicio = m_reng.group(3).strip()
-
-        descripcion  = desc_inicio
-        cantidad_str = ""
-        imp_unit_str = ""
-        imp_total_str= ""
-
-        j = i + 1
-        while j < len(lineas) and j < i + 10:
-            sig = lineas[j].strip()
-
-            # Si empieza otro renglón, parar
-            if re.match(r'^(\d{1,3})\s+[A-Z0-9]{5,}', sig):
-                break
-
-            # Línea con importes: contiene $X.XXX,XX
-            if re.search(r'\$[\d.]+,\d{2}', sig):
-                # Extraer cantidad (número entero al inicio de la línea)
-                m_cant = re.match(r'^(\d[\d.]*)\s', sig)
-                if m_cant and not cantidad_str:
-                    cantidad_str = m_cant.group(1)
-
-                # Extraer importes
-                importes = re.findall(r'\$?([\d.]+,\d{2})', sig)
-                if len(importes) >= 2:
-                    imp_unit_str  = importes[-2]
-                    imp_total_str = importes[-1]
-                elif len(importes) == 1:
-                    imp_total_str = importes[0]
-
-            # Línea solo con número → puede ser la cantidad
-            elif re.match(r'^[\d.]+$', sig) and not cantidad_str:
-                cantidad_str = sig
-
-            # Texto adicional de descripción (sin números, sin $)
-            elif not re.search(r'[\$\d]', sig) and sig:
-                descripcion += " " + sig
-
-            j += 1
-
-        renglones.append({
-            "renglon":              reng_num,
-            "codigo":               codigo,
-            "cod_sigaf":            "",
-            "descripcion":          limpiar_descripcion(descripcion),
-            "cantidad":             cantidad_str,
-            "importe_unitario":     imp_unit_str,
-            "importe_total":        imp_total_str,
-            "cantidad_num":         limpiar_cantidad(cantidad_str),
-            "importe_unitario_num": limpiar_monto(imp_unit_str),
-            "importe_total_num":    limpiar_monto(imp_total_str),
-        })
-        i = j
+        i += 1
 
     if not renglones:
-        errores.append("No se pudieron extraer renglones del PDF")
+        errores.append("No se pudieron extraer renglones del PDF (fallback también falló)")
 
     return renglones
 
