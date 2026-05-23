@@ -4,13 +4,17 @@ parsear_oc.py
 Parser de PDFs de Órdenes de Compra — HIGA Oscar Alende
 
 Estructura del PDF (SIGAF Buenos Aires):
-  - La tabla de renglones es detectada por pdfplumber como UNA SOLA FILA
-    donde cada columna contiene todos los valores separados por \\n.
-  - La estrategia correcta es: detectar esa fila fusionada y hacer zip
-    por columnas (Renglón, Código, Cantidad, Imp.Unitario, Imp.Total).
-  - La descripción se extrae del texto crudo usando los números de renglón
-    como anclas, ya que pdfplumber la fusiona en un bloque único.
-  - Fallback: parseo línea por línea del texto crudo.
+  - Los renglones pueden estar distribuidos en VARIAS páginas de contenido.
+    Se procesan todas las páginas que contengan tabla de renglones
+    (Renglón/Código/Cantidad/Importe), ignorando páginas de firma y carátula.
+  - Cada tabla de renglones es detectada por pdfplumber como UNA SOLA FILA
+    donde cada columna contiene todos los valores separados por \\n (columnas
+    fusionadas). Se hace zip por columnas para reconstruir cada renglón.
+  - La descripción se extrae del texto crudo acumulado de todas las páginas,
+    usando el número de renglón como ancla.
+  - Se filtran filas espurias (encabezado SAF, subtotales, afectación).
+  - Se limpian marcas/nombres de empresa que pdfplumber pega a la descripción.
+  - Fallback: parseo línea por línea del texto crudo acumulado.
 """
 
 import re
@@ -46,6 +50,79 @@ def limpiar_cantidad(s: str) -> float:
         return float(s)
     except ValueError:
         return 0.0
+
+
+def es_pagina_contenido(texto: str) -> bool:
+    """
+    Devuelve True si la página tiene contenido de OC (renglones/encabezado).
+    Filtra páginas de firma (Hoja 3/3), carátula GEDO y hoja adicional.
+    """
+    if not texto:
+        return False
+    # Excluir hoja adicional de firmas GEDO
+    if "Hoja Adicional de Firmas" in texto:
+        return False
+    # Excluir páginas que solo tienen firma/sello (Hoja 3/3 en este PDF)
+    if re.search(r'JURIDISDICCION RESPONSABLE', texto, re.IGNORECASE):
+        return False
+    # Debe tener al menos referencia a OC o solicitud
+    return bool(re.search(r'(?:Nro\.?\s*(?:de\s*)?O\.?C\.|SOLICITUD\s+Nro)', texto, re.IGNORECASE))
+
+
+def es_fila_renglones(fila: list, header_norm: list) -> bool:
+    """
+    Verifica que la fila sea de datos de renglones y no una fila espuria
+    (encabezado SAF repetido, subtotales, afectación presupuestaria).
+    """
+    if not fila or not any(fila):
+        return False
+    primera_celda = str(fila[0] or "").strip()
+    # Fila de encabezado SAF (texto largo sin números de renglón)
+    if "Saf:" in primera_celda or "Jurisdicción" in primera_celda:
+        return False
+    # Fila de subtotal/total
+    if re.search(r'SubTotal|TOTAL AFECTADO|Remito:|Facturación:', primera_celda, re.IGNORECASE):
+        return False
+    # Fila de afectación presupuestaria
+    if re.search(r'C\.\s*INSTITUCIONAL|PRG\s+\d+', primera_celda):
+        return False
+    # Debe tener al menos un número de renglón en la primera celda
+    idx_reng = next((i for i, h in enumerate(header_norm) if "renglon" in h or "reng" in h), None)
+    if idx_reng is not None and idx_reng < len(fila):
+        col_reng = str(fila[idx_reng] or "").strip()
+        return bool(re.search(r'\d', col_reng))
+    return False
+
+
+def limpiar_descripcion_celda(texto: str) -> str:
+    """
+    Limpia el texto de descripción de una celda:
+    - Elimina nombres de empresa/marca que pdfplumber pega al inicio
+      (palabras en mayúsculas sin dígitos que aparecen solas en la primera línea
+       y no forman parte de la descripción del producto).
+    - Toma la primera línea significativa como descripción principal.
+    """
+    if not texto:
+        return ""
+    lineas = [l.strip() for l in texto.split("\n") if l.strip()]
+    if not lineas:
+        return ""
+
+    # Si la primera línea parece un nombre de empresa/marca (solo mayúsculas,
+    # sin números, sin paréntesis, corta), saltarla
+    primera = lineas[0]
+    es_marca = (
+        primera.isupper() and
+        len(primera.split()) <= 3 and
+        not re.search(r'\d', primera) and
+        not re.search(r'(?:ALCOHOL|IODO|DETER|VASEL|ORTO|RITU|AMOX|AMPIC|CEFTR)', primera, re.IGNORECASE)
+    )
+    desc_lineas = lineas[1:] if es_marca else lineas
+    if not desc_lineas:
+        return primera  # fallback: devolver la primera aunque sea marca
+
+    # Tomar la primera línea significativa (la descripción principal)
+    return desc_lineas[0].strip()
 
 
 def buscar_campo(texto: str, patron: str, grupo: int = 1) -> str:
@@ -114,14 +191,23 @@ def parsear_oc(ruta_pdf: str) -> dict:
         "errores":    [],
     }
 
-    # ── Extraer texto de página 1 ─────────────────────────────────────────────
+    # ── Extraer texto de TODAS las páginas de contenido ──────────────────────
     try:
         with pdfplumber.open(ruta_pdf) as pdf:
-            pagina = pdf.pages[0]
-            texto  = pagina.extract_text(x_tolerance=3, y_tolerance=3) or ""
+            textos_por_pagina = []
+            for pagina in pdf.pages:
+                t = pagina.extract_text(x_tolerance=3, y_tolerance=3) or ""
+                if es_pagina_contenido(t):
+                    textos_por_pagina.append(t)
+            # Texto acumulado de todas las páginas (para búsqueda de descripciones)
+            texto = "\n".join(textos_por_pagina)
             resultado["texto_raw"] = texto
     except Exception as e:
         resultado["errores"].append(f"Error al abrir PDF: {e}")
+        return resultado
+
+    if not texto:
+        resultado["errores"].append("No se pudo extraer texto del PDF")
         return resultado
 
     # ── ENCABEZADO ────────────────────────────────────────────────────────────
@@ -200,124 +286,131 @@ def parsear_oc(ruta_pdf: str) -> dict:
     # ── RENGLONES ─────────────────────────────────────────────────────────────
     renglones = []
 
-    # Estrategia A: tabla SIGAF con columnas fusionadas en una sola fila
-    # pdfplumber devuelve la tabla como 2 filas: header + 1 fila con todo junto
+    # Estrategia A: tablas SIGAF con columnas fusionadas.
+    # Los renglones pueden distribuirse en varias páginas. La página 1 tiene
+    # el header (Renglón/Código/Cantidad/etc.); las páginas siguientes pueden
+    # NO tener header — la tabla continúa directamente con datos.
+    # Solución: guardar los índices de columna del primer header encontrado
+    # y reutilizarlos en las páginas siguientes.
+
+    # Índices de columna globales (se fijan en la primera tabla con header válido)
+    _i_reng = _i_cod = _i_cant = _i_uunit = _i_total = None
+    _header_fijado = False
+
+    def _idx_col(header_norm, keywords):
+        for kw in keywords:
+            for i, h in enumerate(header_norm):
+                if kw in h:
+                    return i
+        return None
+
+    def _celda(fila, idx):
+        if idx is None or idx >= len(fila):
+            return ""
+        v = fila[idx]
+        return str(v).strip() if v else ""
+
+    def _procesar_fila_fusionada(col_reng, col_cod, col_cant, col_uunt, col_tot):
+        """Extrae renglones de una fila fusionada SIGAF y los agrega a la lista."""
+        rengs = [r.strip() for r in col_reng.split("\n")
+                 if r.strip() and re.match(r'^\d+$', r.strip())]
+        cods  = [c.strip() for c in col_cod.split("\n")
+                 if c.strip() and re.match(r'^[A-Z0-9]{4,}$', c.strip())]
+        cants = [c.strip() for c in col_cant.split("\n") if c.strip()]
+        uunts = [c.strip() for c in col_uunt.split("\n") if c.strip()]
+        tots  = [c.strip() for c in col_tot.split("\n")  if c.strip()]
+
+        if not rengs:
+            return
+
+        n = len(rengs)
+        def pad(lst): return (lst + [""] * n)[:n]
+        cods, cants, uunts, tots = pad(cods), pad(cants), pad(uunts), pad(tots)
+
+        for reng_num, cod, cant, uunt, tot in zip(rengs, cods, cants, uunts, tots):
+            desc = extraer_descripcion_desde_texto(texto, reng_num)
+            renglones.append({
+                "renglon":              reng_num,
+                "codigo":               cod,
+                "cod_sigaf":            "",
+                "descripcion":          limpiar_descripcion(desc),
+                "cantidad":             cant,
+                "importe_unitario":     uunt,
+                "importe_total":        tot,
+                "cantidad_num":         limpiar_cantidad(cant),
+                "importe_unitario_num": limpiar_monto(uunt),
+                "importe_total_num":    limpiar_monto(tot),
+            })
+
     try:
         with pdfplumber.open(ruta_pdf) as pdf:
-            pagina = pdf.pages[0]
-            tablas = pagina.extract_tables()
-
-            for tabla in (tablas or []):
-                if not tabla or len(tabla) < 2:
+            for pagina in pdf.pages:
+                t_pag = pagina.extract_text(x_tolerance=3, y_tolerance=3) or ""
+                if not es_pagina_contenido(t_pag):
                     continue
 
-                header = [str(c).lower().strip() if c else "" for c in tabla[0]]
-                header_norm = [
-                    h.replace("ó","o").replace("é","e").replace("ú","u")
-                     .replace("í","i").replace("á","a") for h in header
-                ]
-
-                # Verificar que tiene las columnas mínimas necesarias
-                tiene_renglon  = any(kw in h for h in header_norm for kw in ["renglon","reng"])
-                tiene_cantidad = any("cantidad" in h for h in header_norm)
-                if not (tiene_renglon and tiene_cantidad):
-                    continue
-
-                def idx_col(keywords):
-                    for kw in keywords:
-                        for i, h in enumerate(header_norm):
-                            if kw in h:
-                                return i
-                    return None
-
-                i_reng  = idx_col(["renglon", "reng"])
-                i_cod   = idx_col(["codigo", "cod"])
-                i_cant  = idx_col(["cantidad"])
-                i_uunit = idx_col(["unitario", "unit", "precio"])
-                i_total = None
-                # Importe Total: evitar confundir con Unitario
-                for i, h in enumerate(header_norm):
-                    if "total" in h and i != i_uunit:
-                        i_total = i
-                        break
-                if i_total is None:
-                    i_total = idx_col(["importe total", "total"])
-
-                def celda(fila, idx):
-                    if idx is None or idx >= len(fila):
-                        return ""
-                    v = fila[idx]
-                    return str(v).strip() if v else ""
-
-                for fila in tabla[1:]:
-                    if not fila or not any(fila):
+                for tabla in (pagina.extract_tables() or []):
+                    if not tabla or len(tabla) < 1:
                         continue
 
-                    col_reng = celda(fila, i_reng)
-                    col_cod  = celda(fila, i_cod)
-                    col_cant = celda(fila, i_cant)
-                    col_uunt = celda(fila, i_uunit)
-                    col_tot  = celda(fila, i_total)
+                    header_raw  = [str(c).lower().strip() if c else "" for c in tabla[0]]
+                    header_norm = [
+                        h.replace("ó","o").replace("é","e").replace("ú","u")
+                         .replace("í","i").replace("á","a") for h in header_raw
+                    ]
 
-                    # Detectar si es la fila "fusionada SIGAF":
-                    # la celda de Renglón contiene múltiples valores separados por \n
-                    rengs_lista  = [r.strip() for r in col_reng.split("\n") if r.strip() and re.match(r'^\d+$', r.strip())]
-                    cods_lista   = [c.strip() for c in col_cod.split("\n")  if c.strip() and re.match(r'^[A-Z0-9]{4,}$', c.strip())]
-                    cants_lista  = [c.strip() for c in col_cant.split("\n") if c.strip()]
-                    uunts_lista  = [c.strip() for c in col_uunt.split("\n") if c.strip()]
-                    tots_lista   = [c.strip() for c in col_tot.split("\n")  if c.strip()]
+                    tiene_renglon  = any(kw in h for h in header_norm for kw in ["renglon","reng"])
+                    tiene_cantidad = any("cantidad" in h for h in header_norm)
 
-                    es_fusionada = len(rengs_lista) > 1
+                    if tiene_renglon and tiene_cantidad:
+                        # ── Tabla con header completo (página 1 o primera con renglones)
+                        _i_reng  = _idx_col(header_norm, ["renglon", "reng"])
+                        _i_cod   = _idx_col(header_norm, ["codigo", "cod"])
+                        _i_cant  = _idx_col(header_norm, ["cantidad"])
+                        _i_uunit = _idx_col(header_norm, ["unitario", "unit", "precio"])
+                        _i_total = None
+                        for i, h in enumerate(header_norm):
+                            if "total" in h and i != _i_uunit:
+                                _i_total = i
+                                break
+                        if _i_total is None:
+                            _i_total = _idx_col(header_norm, ["importe total", "total"])
+                        _header_fijado = True
 
-                    if es_fusionada:
-                        # Zip por columnas — la descripción se extrae del texto crudo
-                        n = len(rengs_lista)
-                        # Asegurar que todas las listas tengan longitud n
-                        def pad(lst, n):
-                            return (lst + [""] * n)[:n]
-                        cods_lista  = pad(cods_lista, n)
-                        cants_lista = pad(cants_lista, n)
-                        uunts_lista = pad(uunts_lista, n)
-                        tots_lista  = pad(tots_lista, n)
+                        for fila in tabla[1:]:
+                            if not es_fila_renglones(fila, header_norm):
+                                continue
+                            _procesar_fila_fusionada(
+                                _celda(fila, _i_reng), _celda(fila, _i_cod),
+                                _celda(fila, _i_cant), _celda(fila, _i_uunit),
+                                _celda(fila, _i_total)
+                            )
 
-                        siguientes = rengs_lista[1:] + [None]
-                        for reng_num, cod, cant, uunt, tot, sig in zip(
-                            rengs_lista, cods_lista, cants_lista,
-                            uunts_lista, tots_lista, siguientes
-                        ):
-                            desc = extraer_descripcion_desde_texto(texto, reng_num, sig)
-                            renglones.append({
-                                "renglon":              reng_num,
-                                "codigo":               cod,
-                                "cod_sigaf":            "",
-                                "descripcion":          limpiar_descripcion(desc),
-                                "cantidad":             cant,
-                                "importe_unitario":     uunt,
-                                "importe_total":        tot,
-                                "cantidad_num":         limpiar_cantidad(cant),
-                                "importe_unitario_num": limpiar_monto(uunt),
-                                "importe_total_num":    limpiar_monto(tot),
-                            })
-                        break  # Tabla procesada
-
-                    else:
-                        # Fila normal (1 renglón por fila)
-                        reng_num = col_reng.strip()
-                        if not reng_num or not re.match(r'^\d+$', reng_num):
-                            continue
-                        desc = extraer_descripcion_desde_texto(texto, reng_num)
-                        renglones.append({
-                            "renglon":              reng_num,
-                            "codigo":               col_cod,
-                            "cod_sigaf":            "",
-                            "descripcion":          limpiar_descripcion(desc) or col_cod,
-                            "cantidad":             col_cant,
-                            "importe_unitario":     col_uunt,
-                            "importe_total":        col_tot,
-                            "cantidad_num":         limpiar_cantidad(col_cant),
-                            "importe_unitario_num": limpiar_monto(col_uunt),
-                            "importe_total_num":    limpiar_monto(col_tot),
-                        })
+                    elif _header_fijado:
+                        # ── Página de continuación: no tiene header de renglones.
+                        # La primera fila puede ser el encabezado SAF u otra cosa;
+                        # buscamos directamente filas que tengan números de renglón
+                        # en la columna _i_reng (ya fijada).
+                        for fila in tabla:
+                            if not fila or not any(fila):
+                                continue
+                            col_reng_raw = _celda(fila, _i_reng)
+                            # Verificar que la celda de renglón tiene al menos un número
+                            rengs_test = [r.strip() for r in col_reng_raw.split("\n")
+                                          if r.strip() and re.match(r'^\d+$', r.strip())]
+                            if not rengs_test:
+                                continue
+                            # Descartar filas de subtotal/afectación
+                            primera = str(fila[0] or "").strip()
+                            if re.search(r'SubTotal|TOTAL AFECTADO|Remito|Facturación|PRG\s+\d+|C\.\s*INSTITUCIONAL|Saf:', primera, re.IGNORECASE):
+                                continue
+                            _procesar_fila_fusionada(
+                                col_reng_raw,
+                                _celda(fila, _i_cod),
+                                _celda(fila, _i_cant),
+                                _celda(fila, _i_uunit),
+                                _celda(fila, _i_total)
+                            )
 
     except Exception as e:
         resultado["errores"].append(f"Error extrayendo tabla: {e}")
