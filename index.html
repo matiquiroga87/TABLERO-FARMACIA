@@ -569,11 +569,16 @@ function kpiCard(cls,lbl,val,sub,tip){
 // ── RESUMEN ───────────────────────────────────────────────────────────────────
 function buildResumen(){
   const S=STATS;
+  // Deduplicar por código: contar cada código una sola vez sin importar el rubro o solapa
+  const codigosUnicos = new Set(DATA.map(r => r.Codigo));
+  const totalInsumos = codigosUnicos.size;
+  const totalRenglones = DATA.length;
+  const totalDups = totalRenglones - totalInsumos;
   $('kpi-res').innerHTML =
-    kpiCard('g','Medicamentos únicos',
-      S.uniq.toLocaleString('es-AR'),
-      S.total.toLocaleString('es-AR')+' renglones · '+S.dups+' duplicados excluidos',
-      'Total de medicamentos e insumos <strong>únicos</strong> en el archivo. Se deduplicó por código vademecum (col A): si el mismo código aparece en más de un rubro, se cuenta una sola vez. Los '+S.dups+' duplicados son el mismo producto listado en distintas hojas.') +
+    kpiCard('g','Insumos únicos',
+      totalInsumos.toLocaleString('es-AR'),
+      totalRenglones.toLocaleString('es-AR')+' renglones · '+totalDups.toLocaleString('es-AR')+' duplicados excluidos',
+      'Total de insumos y medicamentos <strong>únicos</strong> en el archivo. Se deduplicó por código vademecum (col A): si el mismo código aparece en más de un rubro o solapa, se cuenta una sola vez. Los '+totalDups.toLocaleString('es-AR')+' duplicados son el mismo producto listado en distintas hojas.') +
     kpiCard('','Monto total justiprecio',
       fmt(S.monto),
       'Suma de col Monto_Total de todas las hojas',
