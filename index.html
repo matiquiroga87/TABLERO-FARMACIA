@@ -245,7 +245,7 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
       <div class="card">
         <div class="ctitle">Ejecución del rubro</div>
         <div style="height:180px;position:relative"><canvas id="ch-rub-ejec"></canvas></div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px" id="rub-adj-des"></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px" id="rub-adj-des"></div>
       </div>
     </div>
     <div class="g2">
@@ -639,14 +639,28 @@ function buildResumen(){
       scales:{x:{...AXw,ticks:{...AXw.ticks,callback:v=>fmt(v)}},y:{...AXn}}}});
 
   // Adj vs des
+  // Adjudicado    = proveedor presente + OC emitida (Tiene_OC=SI)
+  // Pre-adjudicado = proveedor presente + sin OC (Tiene_OC=NO)
+  // Desierto       = Es_Desierto=SI (proveedor = "Desierto"/"Desierta")
+  // Sin gestión    = proveedor vacío → no se grafica
   const dm={};
-  DATA.forEach(r=>{if(!dm[r.Rubro])dm[r.Rubro]={a:0,d:0};r.Es_Desierto==='SI'?dm[r.Rubro].d++:dm[r.Rubro].a++});
-  const ds=Object.entries(dm).sort((a,b)=>(b[1].a+b[1].d)-(a[1].a+a[1].d));
+  DATA.forEach(r=>{
+    if(!dm[r.Rubro]) dm[r.Rubro]={adj:0,pre:0,des:0};
+    const prov = (r.Proveedor||'').trim().toLowerCase();
+    if(r.Es_Desierto==='SI'){
+      dm[r.Rubro].des++;
+    } else if(prov !== ''){
+      r.Tiene_OC==='SI' ? dm[r.Rubro].adj++ : dm[r.Rubro].pre++;
+    }
+    // proveedor vacío → sin gestión, no se grafica
+  });
+  const ds=Object.entries(dm).sort((a,b)=>(b[1].adj+b[1].pre+b[1].des)-(a[1].adj+a[1].pre+a[1].des));
   dc('ch-des');
   CH['ch-des']=new Chart($('ch-des'),{type:'bar',
     data:{labels:ds.map(r=>r[0]),datasets:[
-      {label:'Adjudicados',data:ds.map(r=>r[1].a),backgroundColor:'rgba(63,185,80,.75)',borderRadius:2},
-      {label:'Desiertos',  data:ds.map(r=>r[1].d),backgroundColor:'rgba(248,81,73,.75)',borderRadius:2}]},
+      {label:'Adjudicados',    data:ds.map(r=>r[1].adj),backgroundColor:'rgba(63,185,80,.75)', borderRadius:2},
+      {label:'Pre-adjudicados',data:ds.map(r=>r[1].pre),backgroundColor:'rgba(227,179,65,.75)',borderRadius:2},
+      {label:'Desiertos',      data:ds.map(r=>r[1].des),backgroundColor:'rgba(248,81,73,.75)', borderRadius:2}]},
     options:{responsive:true,maintainAspectRatio:false,
       plugins:{legend:{labels:{color:'#fff'}}},
       scales:{x:{stacked:true,...AXn,ticks:{...AXn.ticks,maxRotation:40,font:{size:10}}},
@@ -1067,11 +1081,15 @@ function verRubro(rubro){
   $('rubro-nombre').textContent=rubro;
   const items=DATA.filter(r=>r.Rubro===rubro);
   const monto=items.reduce((s,r)=>s+Number(r.Monto_Total||0),0);
-  const des=items.filter(r=>r.Es_Desierto==='SI').length;
-  const conOC=items.filter(r=>r.Tiene_OC==='SI').length;
-  const montoOC=items.filter(r=>r.Tiene_OC==='SI').reduce((s,r)=>s+Number(r.Monto_Total||0),0);
-  const pctEjec=monto>0?montoOC/monto*100:0;
-  const provs=[...new Set(items.filter(r=>r.Proveedor&&!['desierto','desierta',''].includes(r.Proveedor.toLowerCase())).map(r=>r.Proveedor))].length;
+  // Clasificación correcta por estado
+  const des    = items.filter(r=>r.Es_Desierto==='SI').length;
+  const adj    = items.filter(r=>r.Es_Desierto==='NO' && (r.Proveedor||'').trim()!=='' && r.Tiene_OC==='SI').length;
+  const preAdj = items.filter(r=>r.Es_Desierto==='NO' && (r.Proveedor||'').trim()!=='' && r.Tiene_OC==='NO').length;
+  const sinGes = items.filter(r=>r.Es_Desierto==='NO' && (r.Proveedor||'').trim()==='').length;
+  const conOC  = items.filter(r=>r.Tiene_OC==='SI').length;
+  const montoOC= items.filter(r=>r.Tiene_OC==='SI').reduce((s,r)=>s+Number(r.Monto_Total||0),0);
+  const pctEjec= monto>0?montoOC/monto*100:0;
+  const provs  = [...new Set(items.filter(r=>r.Proveedor&&!['desierto','desierta',''].includes(r.Proveedor.toLowerCase())).map(r=>r.Proveedor))].length;
 
   $('kpi-rubro').innerHTML=
     kpiCard('','Ítems en el rubro',items.length,provs+' proveedores distintos','Total de renglones en esta hoja del archivo.')+
@@ -1101,7 +1119,8 @@ function verRubro(rubro){
                tooltip:{callbacks:{label:c=>`${fmt(c.raw)} (${(c.raw/monto*100).toFixed(1)}%)`}}}}});
 
   $('rub-adj-des').innerHTML=
-    `<div style="background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.3);border-radius:8px;padding:10px;text-align:center"><span style="font-size:20px;font-weight:700;color:var(--green)">${items.length-des}</span><br><span style="font-size:11px;color:var(--muted)">Adjudicados</span></div>
+    `<div style="background:rgba(63,185,80,.1);border:1px solid rgba(63,185,80,.3);border-radius:8px;padding:10px;text-align:center"><span style="font-size:20px;font-weight:700;color:var(--green)">${adj}</span><br><span style="font-size:11px;color:var(--muted)">Adjudicados</span></div>
+     <div style="background:rgba(227,179,65,.1);border:1px solid rgba(227,179,65,.3);border-radius:8px;padding:10px;text-align:center"><span style="font-size:20px;font-weight:700;color:var(--yel)">${preAdj}</span><br><span style="font-size:11px;color:var(--muted)">Pre-adjudicados</span></div>
      <div style="background:rgba(248,81,73,.1);border:1px solid rgba(248,81,73,.3);border-radius:8px;padding:10px;text-align:center"><span style="font-size:20px;font-weight:700;color:var(--red)">${des}</span><br><span style="font-size:11px;color:var(--muted)">Desiertos</span></div>`;
 
   // ABC rubro
