@@ -85,6 +85,11 @@ def procesar(ruta_xlsx):
             if m==0 and q>0 and j>0: m = q*j
             prov = str(row[cp_i]).strip() if cp_i<len(row) and pd.notna(row[cp_i]) else ""
             oc   = str(row[15]).strip()   if len(row)>15  and pd.notna(row[15])    else ""
+            # Solicitud (col K=10) y Solicitud ampliación (col L=11)
+            sol_k = str(row[10]).strip() if len(row)>10 and pd.notna(row[10]) else ""
+            sol_l = str(row[11]).strip() if len(row)>11 and pd.notna(row[11]) else ""
+            sol_k = "" if sol_k.lower() in ("nan","") else sol_k
+            sol_l = "" if sol_l.lower() in ("nan","") else sol_l
             cons = sf(row[cons_i]) if cons_i < len(row) else 0
             hist_vals = [sf(row[c]) for c in hist if c < len(row)]
             xyz, media, cv = clasificar_xyz(hist_vals)
@@ -100,6 +105,8 @@ def procesar(ruta_xlsx):
                 "Justiprecio":j,"Monto_Total":m,"OC":oc if has_oc else "",
                 "Monto_Adjudicado":adj,
                 "Precio_Proveedor":prec,
+                "Solicitud":sol_k,
+                "Solicitud_Amp":sol_l,
                 "Es_Desierto":"SI" if is_des else "NO",
                 "Tiene_OC":"SI"  if has_oc else "NO",
                 "Clase_XYZ":xyz,"Media_Historica":media,"CV":cv,
@@ -120,6 +127,50 @@ def procesar(ruta_xlsx):
     df_out["Clase_ABC_Cantidad"] = df_out["Clase_ABC_Cantidad"].fillna("Sin cant.")
 
     df_out["Matriz_ABC_XYZ"] = df_out["Clase_ABC_Monto"] + df_out["Clase_XYZ"]
+
+    # ── Clasificación de Estado ──────────────────────────────────────────────
+    # Paso 1: por solicitud, ¿tiene algún renglón con OC?
+    from collections import defaultdict
+    sol_tiene_oc = defaultdict(bool)
+    for _, row in df_out.iterrows():
+        for campo in ["Solicitud", "Solicitud_Amp"]:
+            s = str(row.get(campo, "") or "").strip()
+            if s and s.lower() not in ("nan", ""):
+                if row["Tiene_OC"] == "SI":
+                    sol_tiene_oc[s] = True
+
+    # Paso 2: por código+desc, ¿tiene OC en algún renglón?
+    clave_tiene_oc = defaultdict(bool)
+    for _, row in df_out.iterrows():
+        clave = (row["Codigo"], str(row["Descripcion"]).strip().upper())
+        if row["Tiene_OC"] == "SI":
+            clave_tiene_oc[clave] = True
+
+    def clasificar_estado(row):
+        prov  = str(row.get("Proveedor", "") or "").strip().lower()
+        clave = (row["Codigo"], str(row["Descripcion"]).strip().upper())
+
+        if prov in ("desierto", "desierta"):
+            # ¿Tiene OC en otra instancia del mismo código+desc?
+            if clave_tiene_oc[clave] and row["Tiene_OC"] == "NO":
+                return "Relicitado adjudicado"
+            return "Desierto"
+        if prov == "":
+            return "Sin gestión"
+        if row["Tiene_OC"] == "SI":
+            return "Adjudicado"
+        # Proveedor presente + sin OC → depende de la solicitud
+        sols = []
+        for campo in ["Solicitud", "Solicitud_Amp"]:
+            s = str(row.get(campo, "") or "").strip()
+            if s and s.lower() not in ("nan", ""):
+                sols.append(s)
+        if sols and any(sol_tiene_oc[s] for s in sols):
+            return "Desierto"
+        return "Pre-adjudicado"
+
+    df_out["Estado"] = df_out.apply(clasificar_estado, axis=1)
+
     # Deduplicación: si el mismo Código tiene descripciones distintas (ej. Sevoflurano común vs Quick Fill)
     # se trata cada combinación (Codigo, Descripcion_normalizada) como un ítem único independiente.
     # Para VARIOS_ nunca se marca como duplicado.
