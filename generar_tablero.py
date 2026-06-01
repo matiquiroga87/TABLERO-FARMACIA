@@ -27,10 +27,10 @@ RUBROS_CFG = [
     ('DESIERTOS',3,178),('ESTERILIZACION DESIERTOS',3,13),
 ]
 RUBRO_COL = {
-    "VARIOS":                  {"consumo":4,"cm":24,"cq":17,"cj":22,"cp":12},
-    "ESTERILIZACION":          {"consumo":4,"cm":25,"cq":17,"cj":23,"cp":12},
-    "ESTERILIZACION DESIERTOS":{"consumo":4,"cm":25,"cq":17,"cj":23,"cp":12},
-    "DEFAULT":                 {"consumo":5,"cm":25,"cq":17,"cj":23,"cp":12},
+    "VARIOS":                  {"consumo":4,"cm":24,"cq":17,"cj":22,"cp":12,"caa":25,"cy":23},
+    "ESTERILIZACION":          {"consumo":4,"cm":25,"cq":17,"cj":23,"cp":12,"caa":26,"cy":24},
+    "ESTERILIZACION DESIERTOS":{"consumo":4,"cm":25,"cq":17,"cj":23,"cp":12,"caa":26,"cy":24},
+    "DEFAULT":                 {"consumo":5,"cm":25,"cq":17,"cj":23,"cp":12,"caa":26,"cy":24},
 }
 HIST_COLS = {
     "ESTERILIZACION":          [2,3,4],
@@ -67,7 +67,7 @@ def procesar(ruta_xlsx):
         df = all_sheets[sheet_name]
         cfg  = RUBRO_COL.get(sheet_name, RUBRO_COL["DEFAULT"])
         hist = HIST_COLS.get(sheet_name, HIST_COLS["DEFAULT"])
-        cm_i,cq_i,cj_i,cp_i,cons_i = cfg["cm"],cfg["cq"],cfg["cj"],cfg["cp"],cfg["consumo"]
+        cm_i,cq_i,cj_i,cp_i,cons_i,caa_i,cy_i = cfg["cm"],cfg["cq"],cfg["cj"],cfg["cp"],cfg["consumo"],cfg["caa"],cfg["cy"]
         for pi in range(r1-1, r2):
             if pi >= len(df): continue
             row = df.iloc[pi]
@@ -80,6 +80,8 @@ def procesar(ruta_xlsx):
             m    = sf(row[cm_i])   if cm_i   < len(row) else 0
             q    = sf(row[cq_i])   if cq_i   < len(row) else 0
             j    = sf(row[cj_i])   if cj_i   < len(row) else 0
+            adj  = sf(row[caa_i])  if caa_i  < len(row) else 0
+            prec = sf(row[cy_i])   if cy_i   < len(row) else 0
             if m==0 and q>0 and j>0: m = q*j
             prov = str(row[cp_i]).strip() if cp_i<len(row) and pd.notna(row[cp_i]) else ""
             oc   = str(row[15]).strip()   if len(row)>15  and pd.notna(row[15])    else ""
@@ -96,6 +98,8 @@ def procesar(ruta_xlsx):
                 "Descripcion":desc_clean,"Proveedor":prov_clean,
                 "Consumo_Mensual":cons,"Cantidad_Pedida":q,
                 "Justiprecio":j,"Monto_Total":m,"OC":oc if has_oc else "",
+                "Monto_Adjudicado":adj,
+                "Precio_Proveedor":prec,
                 "Es_Desierto":"SI" if is_des else "NO",
                 "Tiene_OC":"SI"  if has_oc else "NO",
                 "Clase_XYZ":xyz,"Media_Historica":media,"CV":cv,
@@ -137,7 +141,12 @@ def calcular_stats(df):
     pct_items  = round(con_oc / total * 100, 2) if total > 0 else 0
     pct_monto  = round(monto_oc / monto * 100, 2) if monto > 0 else 0
 
-    # Insumos únicos: dedup por Codigo (con código) + dedup por Descripcion (sin código)
+    # Monto real adjudicado: col AA, solo ítems con OC
+    monto_adj  = float(df[df["Tiene_OC"]=="SI"]["Monto_Adjudicado"].sum())
+    dif_adj    = round(monto_adj - monto_oc, 2)   # positivo = real > estimado
+    pct_adj    = round((monto_adj / monto_oc - 1) * 100, 2) if monto_oc > 0 else 0
+
+    # Insumos únicos
     con_cod = df[df["Codigo"] != ""].drop_duplicates(subset=["Codigo"])
     sin_cod = df[df["Codigo"] == ""].drop_duplicates(subset=["Descripcion"])
     uniq    = len(con_cod) + len(sin_cod)
@@ -155,6 +164,9 @@ def calcular_stats(df):
         "pct_items": pct_items,
         "pct_monto": pct_monto,
         "dups":      dups,
+        "monto_adj": round(monto_adj, 2),
+        "dif_adj":   dif_adj,
+        "pct_adj":   pct_adj,
     }
 
 def generar_html(df, plantilla_html, salida_html):
@@ -186,7 +198,10 @@ def generar_html(df, plantilla_html, salida_html):
         f"  monto_des:  {stats['monto_des']},\n"
         f"  pct_items:  {stats['pct_items']},\n"
         f"  pct_monto:  {stats['pct_monto']},\n"
-        f"  dups:       {stats['dups']}\n"
+        f"  dups:       {stats['dups']},\n"
+        f"  monto_adj:  {stats['monto_adj']},\n"
+        f"  dif_adj:    {stats['dif_adj']},\n"
+        f"  pct_adj:    {stats['pct_adj']}\n"
         f"}};"
     )
     html = re.sub(
