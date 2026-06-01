@@ -117,13 +117,13 @@ def procesar(ruta_xlsx):
     # ABC por monto
     df_m = df_out[df_out["Monto_Total"]>0].sort_values("Monto_Total",ascending=False).copy()
     df_m["Clase_ABC_Monto"] = clasificar_abc(df_m["Monto_Total"])
-    df_out = df_out.merge(df_m[["Codigo","Rubro","Clase_ABC_Monto"]],on=["Codigo","Rubro"],how="left")
+    df_out = df_out.merge(df_m[["Codigo","Rubro","Descripcion","Clase_ABC_Monto"]],on=["Codigo","Rubro","Descripcion"],how="left")
     df_out["Clase_ABC_Monto"] = df_out["Clase_ABC_Monto"].fillna("Sin monto")
 
     # ABC por cantidad
     df_q = df_out[df_out["Cantidad_Pedida"]>0].sort_values("Cantidad_Pedida",ascending=False).copy()
     df_q["Clase_ABC_Cantidad"] = clasificar_abc(df_q["Cantidad_Pedida"])
-    df_out = df_out.merge(df_q[["Codigo","Rubro","Clase_ABC_Cantidad"]],on=["Codigo","Rubro"],how="left")
+    df_out = df_out.merge(df_q[["Codigo","Rubro","Descripcion","Clase_ABC_Cantidad"]],on=["Codigo","Rubro","Descripcion"],how="left")
     df_out["Clase_ABC_Cantidad"] = df_out["Clase_ABC_Cantidad"].fillna("Sin cant.")
 
     df_out["Matriz_ABC_XYZ"] = df_out["Clase_ABC_Monto"] + df_out["Clase_XYZ"]
