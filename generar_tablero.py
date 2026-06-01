@@ -120,10 +120,15 @@ def procesar(ruta_xlsx):
     df_out["Clase_ABC_Cantidad"] = df_out["Clase_ABC_Cantidad"].fillna("Sin cant.")
 
     df_out["Matriz_ABC_XYZ"] = df_out["Clase_ABC_Monto"] + df_out["Clase_XYZ"]
+    # Deduplicación: si el mismo Código tiene descripciones distintas (ej. Sevoflurano común vs Quick Fill)
+    # se trata cada combinación (Codigo, Descripcion_normalizada) como un ítem único independiente.
+    # Para VARIOS_ nunca se marca como duplicado.
+    df_out["_desc_norm"] = df_out["Descripcion"].str.strip().str.upper()
     df_out["Es_Duplicado"] = (
-        df_out.duplicated(subset=["Codigo"], keep="first") &
+        df_out.duplicated(subset=["Codigo", "_desc_norm"], keep="first") &
         ~df_out["Codigo"].str.startswith("VARIOS_")
     ).map({True:"SI",False:"NO"})
+    df_out.drop(columns=["_desc_norm"], inplace=True)
 
     print(f"  {len(df_out)} ítems procesados")
     print(f"  Monto total: ${df_out['Monto_Total'].sum():,.0f}")
