@@ -1,14 +1,18 @@
 """
 generar_tablero.py
 ==================
-Script simplificado para GitHub Actions.
+Script para GitHub Actions.
 Lee SOLICITUDES_2026.xlsx y genera index.html con los datos embebidos.
 
-No requiere argumentos — GitHub Actions lo llama directamente.
+Correcciones respecto a la versión anterior:
+  - Usa index.html como plantilla (no tablero_template.html que no existe)
+  - Actualiza el bloque STATS con los valores calculados del Excel nuevo
+  - Actualiza la fecha en el footer
 """
 
-import json, csv, re, sys
+import json, re, sys
 from pathlib import Path
+from datetime import datetime
 import pandas as pd
 import numpy as np
 
@@ -61,7 +65,7 @@ def procesar(ruta_xlsx):
     for sheet_name, r1, r2 in RUBROS_CFG:
         if sheet_name not in all_sheets: continue
         df = all_sheets[sheet_name]
-        cfg = RUBRO_COL.get(sheet_name, RUBRO_COL["DEFAULT"])
+        cfg  = RUBRO_COL.get(sheet_name, RUBRO_COL["DEFAULT"])
         hist = HIST_COLS.get(sheet_name, HIST_COLS["DEFAULT"])
         cm_i,cq_i,cj_i,cp_i,cons_i = cfg["cm"],cfg["cq"],cfg["cj"],cfg["cp"],cfg["consumo"]
         for pi in range(r1-1, r2):
@@ -73,9 +77,9 @@ def procesar(ruta_xlsx):
             if not codigo or codigo == "nan":
                 if sheet_name == "VARIOS": codigo = f"VARIOS_{pi}"
                 else: continue
-            m  = sf(row[cm_i])  if cm_i  < len(row) else 0
-            q  = sf(row[cq_i])  if cq_i  < len(row) else 0
-            j  = sf(row[cj_i])  if cj_i  < len(row) else 0
+            m    = sf(row[cm_i])   if cm_i   < len(row) else 0
+            q    = sf(row[cq_i])   if cq_i   < len(row) else 0
+            j    = sf(row[cj_i])   if cj_i   < len(row) else 0
             if m==0 and q>0 and j>0: m = q*j
             prov = str(row[cp_i]).strip() if cp_i<len(row) and pd.notna(row[cp_i]) else ""
             oc   = str(row[15]).strip()   if len(row)>15  and pd.notna(row[15])    else ""
@@ -84,15 +88,19 @@ def procesar(ruta_xlsx):
             xyz, media, cv = clasificar_xyz(hist_vals)
             is_des = prov.lower() in ["desierto","desierta"]
             has_oc = bool(oc) and oc.lower() not in ["nan",""]
+            # Limpiar saltos de línea y tabs en texto libre (pueden romper el JSON)
+            desc_clean = re.sub(r'[\n\r\t]+', ' ', str(desc).strip())
+            prov_clean = re.sub(r'[\n\r\t]+', ' ', prov)
             rows.append({
                 "Rubro":str(sheet_name),"Codigo":codigo,
-                "Descripcion":str(desc).strip(),"Proveedor":prov,
+                "Descripcion":desc_clean,"Proveedor":prov_clean,
                 "Consumo_Mensual":cons,"Cantidad_Pedida":q,
                 "Justiprecio":j,"Monto_Total":m,"OC":oc if has_oc else "",
                 "Es_Desierto":"SI" if is_des else "NO",
-                "Tiene_OC":"SI" if has_oc else "NO",
+                "Tiene_OC":"SI"  if has_oc else "NO",
                 "Clase_XYZ":xyz,"Media_Historica":media,"CV":cv,
             })
+
     df_out = pd.DataFrame(rows)
 
     # ABC por monto
@@ -117,25 +125,93 @@ def procesar(ruta_xlsx):
     print(f"  Monto total: ${df_out['Monto_Total'].sum():,.0f}")
     return df_out
 
+def calcular_stats(df):
+    """Calcula el bloque STATS que va hardcodeado en el HTML."""
+    total      = len(df)
+    monto      = float(df["Monto_Total"].sum())
+    monto_oc   = float(df[df["Tiene_OC"]=="SI"]["Monto_Total"].sum())
+    monto_des  = float(df[df["Es_Desierto"]=="SI"]["Monto_Total"].sum())
+    monto_sin  = monto - monto_oc
+    con_oc     = int((df["Tiene_OC"]=="SI").sum())
+    des        = int((df["Es_Desierto"]=="SI").sum())
+    pct_items  = round(con_oc / total * 100, 2) if total > 0 else 0
+    pct_monto  = round(monto_oc / monto * 100, 2) if monto > 0 else 0
+
+    # Insumos únicos: dedup por Codigo (con código) + dedup por Descripcion (sin código)
+    con_cod = df[df["Codigo"] != ""].drop_duplicates(subset=["Codigo"])
+    sin_cod = df[df["Codigo"] == ""].drop_duplicates(subset=["Descripcion"])
+    uniq    = len(con_cod) + len(sin_cod)
+    dups    = total - uniq
+
+    return {
+        "total":     total,
+        "uniq":      uniq,
+        "des":       des,
+        "con_oc":    con_oc,
+        "monto":     round(monto, 2),
+        "monto_oc":  round(monto_oc, 2),
+        "monto_sin": round(monto_sin, 2),
+        "monto_des": round(monto_des, 2),
+        "pct_items": pct_items,
+        "pct_monto": pct_monto,
+        "dups":      dups,
+    }
+
 def generar_html(df, plantilla_html, salida_html):
-    rows = df.fillna("").to_dict(orient="records")
-    json_data = json.dumps(rows, ensure_ascii=False)
+    records  = df.fillna("").to_dict(orient="records")
+    json_data = json.dumps(records, ensure_ascii=False, separators=(',', ':'))
+    stats    = calcular_stats(df)
+    fecha    = datetime.now().strftime("%d/%m/%Y %H:%M")
+
     with open(plantilla_html, encoding="utf-8") as f:
-        template = f.read()
-    # Replace embedded data
-    result = re.sub(
+        html = f.read()
+
+    # 1. Reemplazar DATA
+    html = re.sub(
         r'const DATA = \[.*?\];',
         f'const DATA = {json_data};',
-        template, flags=re.DOTALL
+        html, flags=re.DOTALL
     )
+
+    # 2. Reemplazar STATS
+    new_stats = (
+        f"const STATS = {{\n"
+        f"  total:      {stats['total']},\n"
+        f"  uniq:       {stats['uniq']},\n"
+        f"  des:        {stats['des']},\n"
+        f"  con_oc:     {stats['con_oc']},\n"
+        f"  monto:      {stats['monto']},\n"
+        f"  monto_oc:   {stats['monto_oc']},\n"
+        f"  monto_sin:  {stats['monto_sin']},\n"
+        f"  monto_des:  {stats['monto_des']},\n"
+        f"  pct_items:  {stats['pct_items']},\n"
+        f"  pct_monto:  {stats['pct_monto']},\n"
+        f"  dups:       {stats['dups']}\n"
+        f"}};"
+    )
+    html = re.sub(
+        r'const STATS = \{.*?\};',
+        new_stats,
+        html, flags=re.DOTALL
+    )
+
+    # 3. Actualizar fecha en el footer
+    html = re.sub(
+        r'(<span id="data-date">)[^<]*(</span>)',
+        rf'\g<1>{fecha}\g<2>',
+        html
+    )
+
     with open(salida_html, "w", encoding="utf-8") as f:
-        f.write(result)
+        f.write(html)
+
     size = Path(salida_html).stat().st_size / 1024
     print(f"  HTML generado: {salida_html} ({size:.0f} KB)")
+    print(f"  STATS actualizadas: {stats['total']} renglones, {stats['uniq']} únicos, ${stats['monto']:,.0f}")
 
 if __name__ == "__main__":
-    # Buscar el archivo Excel en la carpeta actual
-    xlsx_files = list(Path(".").glob("SOLICITUDES*.xlsx"))
+    # Buscar el archivo Excel
+    xlsx_files = sorted(Path(".").glob("SOLICITUDES*.xlsx"))
     if not xlsx_files:
         print("ERROR: No se encontró ningún archivo SOLICITUDES*.xlsx")
         sys.exit(1)
@@ -143,6 +219,12 @@ if __name__ == "__main__":
     xlsx_path = xlsx_files[0]
     print(f"Archivo encontrado: {xlsx_path}")
 
+    # Verificar que existe el index.html como plantilla
+    if not Path("index.html").exists():
+        print("ERROR: No se encontró index.html (necesario como plantilla)")
+        sys.exit(1)
+
     df = procesar(xlsx_path)
-    generar_html(df, "tablero_template.html", "index.html")
+    # Usa index.html como plantilla Y como salida (se sobreescribe)
+    generar_html(df, "index.html", "index.html")
     print("\nListo. index.html actualizado.")
