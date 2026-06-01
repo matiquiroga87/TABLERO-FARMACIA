@@ -964,7 +964,7 @@ function buildProveedores(){
       <td>${r.Proveedor.substring(0,25)}</td>
       <td style="text-align:right">${fmt(r._j)}</td>
       <td style="text-align:right">${fmt(r._p)}</td>
-      <td style="text-align:right;color:${r._desv>0?'var(--red)':r._desv<0?'var(--green)':'var(--muted)');font-weight:600">
+      <td style="text-align:right;color:${r._desv>0?'var(--red)':r._desv<0?'var(--green)':'var(--muted)'};font-weight:600">
         ${r._desv>=0?'+':''}${r._desv.toFixed(1)}%
       </td>
       <td style="text-align:right;color:${r._impacto>0?'var(--red)':r._impacto<0?'var(--green)':'var(--muted)'}">
