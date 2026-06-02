@@ -11,7 +11,7 @@
 :root{
   --bg:#0d1117;--surf:#161b22;--surf2:#21262d;--bord:#30363d;
   --tx:#ffffff;--muted:#c9d1d9;--muted2:#8b949e;
-  --blue:#58a6ff;--green:#3fb950;--yel:#e3b341;--red:#f85149;--purple:#bc8cff;
+  --blue:#58a6ff;--green:#3fb950;--yel:#e3b341;--red:#f85149;--purple:#bc8cff;--orange:#f78166;--cyan:#39d3c3;
 }
 body{background:var(--bg);color:var(--tx);font-family:'DM Sans',sans-serif;font-size:14px}
 
@@ -51,9 +51,9 @@ body{background:var(--bg);color:var(--tx);font-family:'DM Sans',sans-serif;font-
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:12px;margin-bottom:14px}
 
 /* KPI CARD with tooltip */
-.kpi{background:var(--surf);border:1px solid var(--bord);border-radius:10px;padding:.9rem 1rem;border-left:3px solid var(--blue);position:relative;cursor:help}
-.kpi.g{border-left-color:var(--green)}.kpi.y{border-left-color:var(--yel)}
-.kpi.r{border-left-color:var(--red)}.kpi.p{border-left-color:var(--purple)}
+.kpi{background:var(--surf);border:1px solid var(--bord);border-radius:10px;padding:.9rem 1rem;border-left:3px solid var(--muted2);position:relative;cursor:help}
+.kpi.g{border-left-color:var(--green)}.kpi.b{border-left-color:var(--blue)}.kpi.y{border-left-color:var(--yel)}
+.kpi.r{border-left-color:var(--red)}.kpi.p{border-left-color:var(--purple)}.kpi.o{border-left-color:var(--orange)}.kpi.c{border-left-color:var(--cyan)}
 .kpi-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px;display:flex;align-items:center;gap:5px}
 .kpi-lbl::after{content:"ⓘ";font-size:11px;color:var(--muted2);opacity:.7}
 .kpi-val{font-size:22px;font-weight:600;color:#fff;line-height:1}
@@ -150,6 +150,7 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
 </style>
 </head>
 <body>
+<div id="global-tip" style="position:fixed;background:#0d1117;border:1px solid var(--bord);border-radius:8px;padding:12px 16px;font-size:12px;color:var(--muted);line-height:1.7;width:300px;z-index:99999;pointer-events:none;opacity:0;transition:opacity .15s;box-shadow:0 8px 32px rgba(0,0,0,.7);text-align:left"></div>
 <button id="btn-top" onclick="window.scrollTo({top:0,behavior:'smooth'})" title="Volver arriba">↑</button>
 
 <div class="topbar">
@@ -405,7 +406,7 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
 <div class="page on" id="pg-resumen">
   <div class="kpis" id="kpi-res"></div>
   <div class="g2">
-    <div class="card"><div class="ctitle">Monto por rubro</div><div style="height:340px;position:relative"><canvas id="ch-rub"></canvas></div></div>
+    <div class="card"><div class="ctitle">Monto por rubro</div><div style="height:520px;position:relative"><canvas id="ch-rub"></canvas></div></div>
     <div class="card"><div class="ctitle">Adjudicados vs desiertos</div><div style="height:340px;position:relative"><canvas id="ch-des"></canvas></div></div>
   </div>
   <div class="card"><div class="ctitle">Ejecución presupuestal por rubro</div><div id="ejec-bars"></div></div>
@@ -668,36 +669,48 @@ const AXw={ticks:{color:'#fff'},grid:{color:'rgba(255,255,255,.07)'},border:{dis
 const AXn={ticks:{color:'#fff'},grid:{display:false},border:{display:false}};
 
 // Tooltip inteligente: aparece abajo si no hay espacio arriba
+// Tooltip global — no se ve afectado por transform del .kpi:hover
+const _gtip = document.getElementById('global-tip');
 document.addEventListener('mouseover', e => {
-  const kpi = e.target.closest('.kpi');
-  if (!kpi) return;
-  const tip = kpi.querySelector('.tooltip');
-  if (!tip) return;
+  const kpi = e.target.closest('.kpi[data-tip]');
+  if (!kpi || !_gtip) return;
+  const title = kpi.getAttribute('data-tip-title') || '';
+  const content = kpi.getAttribute('data-tip') || '';
+  _gtip.innerHTML = `<strong style="color:#fff;display:block;margin-bottom:5px">${title}</strong>${content}`;
+
+  // Medir altura real
+  _gtip.style.opacity = '0';
+  _gtip.style.width = '300px';
+  _gtip.style.top = '-9999px';
+  _gtip.style.left = '-9999px';
+  _gtip.style.display = 'block';
+  const tipH = _gtip.offsetHeight || 160;
+
   const rect = kpi.getBoundingClientRect();
-  const tipH = 120; // altura estimada del tooltip
-  const margin = 12;
-  const goDown = rect.top < tipH + margin;
-  tip.style.width = '280px';
-  if (goDown) {
-    tip.style.top  = (rect.bottom + margin) + 'px';
-    tip.style.bottom = 'auto';
-    tip.classList.add('tip-down');
+  const margin = 10;
+  const spaceAbove = rect.top;
+  const spaceBelow = window.innerHeight - rect.bottom;
+
+  let top;
+  if (spaceAbove >= tipH + margin) {
+    top = rect.top - tipH - margin;
+  } else if (spaceBelow >= tipH + margin) {
+    top = rect.bottom + margin;
   } else {
-    tip.style.top  = (rect.top - tipH - margin) + 'px';
-    tip.style.bottom = 'auto';
-    tip.classList.remove('tip-down');
+    top = Math.max(8, (window.innerHeight - tipH) / 2);
   }
-  // Centrar horizontalmente y mantener dentro de la pantalla
-  let left = rect.left + rect.width/2 - 140;
-  left = Math.max(8, Math.min(left, window.innerWidth - 288));
-  tip.style.left = left + 'px';
-  tip.style.opacity = '1';
+
+  let left = rect.left + rect.width / 2 - 150;
+  left = Math.max(8, Math.min(left, window.innerWidth - 308));
+
+  _gtip.style.top  = top + 'px';
+  _gtip.style.left = left + 'px';
+  _gtip.style.opacity = '1';
 });
 document.addEventListener('mouseout', e => {
-  const kpi = e.target.closest('.kpi');
-  if (!kpi) return;
-  const tip = kpi.querySelector('.tooltip');
-  if (tip) tip.style.opacity = '0';
+  if (!e.target.closest('.kpi[data-tip]') && !e.relatedTarget?.closest('.kpi[data-tip]')) {
+    if (_gtip) _gtip.style.opacity = '0';
+  }
 });
 
 // Botón volver arriba
@@ -736,10 +749,11 @@ function go(id,el){
 
 // KPI helper — builds card with tooltip
 function kpiCard(cls,lbl,val,sub,tip,pct){
-  const barColor = cls==='g'?'var(--green)':cls==='y'?'var(--yel)':cls==='r'?'var(--red)':cls==='b'?'var(--blue)':'var(--purple)';
+  const barColor = cls==='g'?'var(--green)':cls==='y'?'var(--yel)':cls==='r'?'var(--red)':cls==='b'?'var(--blue)':cls==='c'?'var(--cyan)':cls==='o'?'var(--orange)':'var(--purple)';
   const bar = (pct!=null&&pct>=0)?`<div class="kpi-bar"><div class="kpi-bar-fill" style="width:${Math.min(pct,100)}%;background:${barColor}"></div></div>`:'';
-  return `<div class="kpi ${cls}">
-    <div class="tooltip"><strong>${lbl}</strong>${tip}</div>
+  // Guardar tip en data-tip para el tooltip global
+  const safeTip = (tip||'').replace(/"/g,'&quot;');
+  return `<div class="kpi ${cls}" data-tip-title="${lbl}" data-tip="${safeTip}">
     <div class="kpi-lbl">${lbl}</div>
     <div class="kpi-val">${val}</div>
     <div class="kpi-sub">${sub}</div>
@@ -795,7 +809,7 @@ function buildResumen(){
       totalInsumos.toLocaleString('es-AR'),
       totalRenglones.toLocaleString('es-AR')+' renglones · '+totalDups.toLocaleString('es-AR')+' duplicados excluidos',
       'Total de insumos y medicamentos <strong>únicos</strong> en el archivo. Se deduplicó por código vademecum (col A): si el mismo código aparece en más de un rubro o solapa, se cuenta una sola vez. Los '+totalDups.toLocaleString('es-AR')+' duplicados son el mismo producto listado en distintas hojas.') +
-    kpiCard('g','Con compra solicitada',
+    kpiCard('b','Con compra solicitada',
       totalConPedido.toLocaleString('es-AR'),
       totalConPedido.toLocaleString('es-AR')+' de '+totalInsumos.toLocaleString('es-AR')+' · '+pctConPedido.toFixed(1)+'%',
       'Insumos <strong>únicos</strong> que tienen Cantidad Pedida > 0 en el corriente año (col R). Se requiere código vademecum (col A) y descripción (col B) presentes. Deduplicado por código: si el mismo insumo aparece en varios rubros, se cuenta una sola vez. El <strong>'+pctConPedido.toFixed(1)+'%</strong> representa la cobertura de compra sobre el total de insumos únicos.',pctConPedido) +
@@ -811,11 +825,11 @@ function buildResumen(){
       (S.total-S.con_oc).toLocaleString('es-AR'),
       (100-S.pct_items).toFixed(1)+'% por formalizar',
       'Renglones adjudicados sin Orden de Compra emitida aún (col P vacía). Representa el presupuesto comprometido pero todavía no formalizado en una OC.') +
-    kpiCard('b','Relicitados adjudicados',
+    kpiCard('c','Relicitados adjudicados',
       totalRelicitados.toLocaleString('es-AR'),
       'Insumos declarados desiertos que obtuvieron OC',
       'Insumos que figuran en la hoja DESIERTOS o ESTERILIZACION DESIERTOS y que finalmente obtuvieron una Orden de Compra en cualquier hoja del archivo. Indica la efectividad del proceso de relicitación.') +
-    kpiCard('','Solicitudes de compra',
+    kpiCard('o','Solicitudes de compra',
       (() => {
         const sols = new Set();
         DATA_ANALISIS.forEach(r => {
@@ -842,11 +856,36 @@ function buildResumen(){
   DATA_ANALISIS.forEach(r=>{rm[r.Rubro]=(rm[r.Rubro]||0)+Number(r.Monto_Total||0)});
   const rs=Object.entries(rm).sort((a,b)=>b[1]-a[1]);
   dc('ch-rub');
+  // Paleta degradada por posición: del más costoso (cálido) al menos (frío)
+  const _rubPalette = [
+    'rgba(248,81,73,.80)',   // rojo    — 1er (mayor monto)
+    'rgba(240,100,60,.78)',  // naranja-rojo
+    'rgba(247,129,102,.76)', // naranja
+    'rgba(227,179,65,.78)',  // amarillo
+    'rgba(210,185,65,.76)',  // amarillo-verde
+    'rgba(88,200,120,.76)',  // verde claro
+    'rgba(63,185,80,.78)',   // verde
+    'rgba(50,180,140,.76)',  // verde-cian
+    'rgba(39,211,195,.76)',  // cian
+    'rgba(57,211,195,.74)',  // cian claro
+    'rgba(88,166,255,.80)',  // azul brillante
+    'rgba(88,150,255,.76)',  // azul
+    'rgba(100,140,255,.74)', // azul-violeta
+    'rgba(130,120,255,.74)', // violeta
+    'rgba(160,110,255,.74)', // violeta claro
+    'rgba(188,140,255,.76)', // lavanda
+    'rgba(200,130,200,.74)', // rosa-violeta
+    'rgba(210,120,180,.72)', // rosa
+  ];
   CH['ch-rub']=new Chart($('ch-rub'),{type:'bar',
-    data:{labels:rs.map(r=>r[0]),datasets:[{data:rs.map(r=>r[1]),backgroundColor:'rgba(88,166,255,.75)',borderRadius:3}]},
+    data:{labels:rs.map(r=>r[0]),datasets:[{
+      data:rs.map(r=>r[1]),
+      backgroundColor:rs.map((_,i)=>_rubPalette[i]||'rgba(139,148,158,.6)'),
+      borderRadius:4
+    }]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
       plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},
-      scales:{x:{...AXw,ticks:{...AXw.ticks,callback:v=>fmt(v)}},y:{...AXn}}}});
+      scales:{x:{...AXw,ticks:{...AXw.ticks,callback:v=>fmt(v)}},y:{...AXn,ticks:{...AXn.ticks,font:{size:11}}}}}});
 
   // Adj vs des — usa campo Estado calculado globalmente
   const dm={};
