@@ -962,7 +962,7 @@ function buildABC(){
       plugins:{legend:{labels:{color:'#fff',font:{size:12}}},
                tooltip:{callbacks:{label:c=>`${c.label}: ${fmt(c.raw)} (${(c.raw/tm*100).toFixed(1)}%)`}}}}});
 
-  const top40=DATA_ANALISIS.filter(r=>Number(r.Monto_Total)>0).sort((a,b)=>b.Monto_Total-a.Monto_Total).slice(0,40);
+  const top40=dedupAlertas(DATA_ANALISIS.filter(r=>Number(r.Monto_Total)>0)).sort((a,b)=>b.Monto_Total-a.Monto_Total).slice(0,40);
   const max40=Number(top40[0]?.Monto_Total||1);
   $('pareto').innerHTML=top40.map((r,i)=>`
     <div class="pb">
@@ -972,7 +972,7 @@ function buildABC(){
     </div>`).join('');
 
   document.querySelector('#t30 tbody').innerHTML=
-    DATA_ANALISIS.filter(r=>Number(r.Monto_Total)>0).sort((a,b)=>b.Monto_Total-a.Monto_Total).slice(0,30).map(r=>`<tr>
+    dedupAlertas(DATA_ANALISIS.filter(r=>Number(r.Monto_Total)>0)).sort((a,b)=>b.Monto_Total-a.Monto_Total).slice(0,30).map(r=>`<tr>
       <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.Descripcion}">${r.Descripcion}</td>
       <td style="font-size:11px;color:var(--muted)">${r.Rubro}</td>
       <td style="font-size:11px">${r.Proveedor}</td>
@@ -1024,7 +1024,7 @@ function buildXYZ(){
 }
 function rXYZ(){
   const fc=$('fx-c').value,fr=$('fx-r').value;
-  const rows=DATA_ANALISIS.filter(r=>(!fc||r.Clase_XYZ===fc)&&(!fr||r.Rubro===fr)).sort((a,b)=>b.Monto_Total-a.Monto_Total);
+  const rows=dedupAlertas(DATA_ANALISIS.filter(r=>(!fc||r.Clase_XYZ===fc)&&(!fr||r.Rubro===fr))).sort((a,b)=>b.Monto_Total-a.Monto_Total);
   document.querySelector('#t-xyz tbody').innerHTML=rows.map(r=>`<tr>
     <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.Descripcion}">${r.Descripcion}</td>
     <td style="font-size:11px;color:var(--muted)">${r.Rubro}</td>
@@ -1107,19 +1107,21 @@ function buildProveedores(){
     const impacto = adj - est;           // $ real vs estimado
     return {...r, _j:j, _p:p, _q:q, _adj:adj, _est:est, _desv:desv, _impacto:impacto};
   });
+  // Deduplicar por código antes del análisis de precios
+  const _precDedup = dedupAlertas(precItems);
 
-  const nMasBarato = precItems.filter(r=>r._desv<0).length;
-  const nMasCaro   = precItems.filter(r=>r._desv>0).length;
-  const nIgual     = precItems.filter(r=>r._desv===0).length;
-  const ahorroTotal= precItems.filter(r=>r._impacto<0).reduce((s,r)=>s+r._impacto,0);
-  const sobrecosto = precItems.filter(r=>r._impacto>0).reduce((s,r)=>s+r._impacto,0);
+  const nMasBarato = _precDedup.filter(r=>r._desv<0).length;
+  const nMasCaro   = _precDedup.filter(r=>r._desv>0).length;
+  const nIgual     = _precDedup.filter(r=>r._desv===0).length;
+  const ahorroTotal= _precDedup.filter(r=>r._impacto<0).reduce((s,r)=>s+r._impacto,0);
+  const sobrecosto = _precDedup.filter(r=>r._impacto>0).reduce((s,r)=>s+r._impacto,0);
 
   $('kpi-precios').innerHTML=
     kpiCard('g','Más baratos que justiprecio', nMasBarato,
-      (nMasBarato/precItems.length*100).toFixed(1)+'% de los ítems · ahorro '+fmt(Math.abs(ahorroTotal)),
+      (nMasBarato/_precDedup.length*100).toFixed(1)+'% de los ítems · ahorro '+fmt(Math.abs(ahorroTotal)),
       'Ítems con OC cuyo precio real del proveedor resultó menor al justiprecio estimado. El ahorro representa la diferencia acumulada.')+
     kpiCard('r','Más caros que justiprecio', nMasCaro,
-      (nMasCaro/precItems.length*100).toFixed(1)+'% de los ítems · sobrecosto '+fmt(sobrecosto),
+      (nMasCaro/_precDedup.length*100).toFixed(1)+'% de los ítems · sobrecosto '+fmt(sobrecosto),
       'Ítems con OC cuyo precio real del proveedor superó el justiprecio estimado. El sobrecosto acumulado puede indicar subestimación de precios.')+
     kpiCard('y','Balance neto estimado vs real',
       fmt(ahorroTotal+sobrecosto),
@@ -1138,7 +1140,7 @@ function buildProveedores(){
     {lbl:'+20 a +50%', fn:r=>r._desv> 20 &&r._desv<=50},
     {lbl:'> +50%',     fn:r=>r._desv > 50},
   ];
-  const rCounts = rangos.map(r=>precItems.filter(r.fn).length);
+  const rCounts = rangos.map(r=>_precDedup.filter(r.fn).length);
   const rColors = rangos.map((_,i)=>i<4?'rgba(63,185,80,.75)':i===4?'rgba(139,148,158,.55)':'rgba(248,81,73,.75)');
   dc('ch-dist-precios');
   CH['ch-dist-precios']=new Chart($('ch-dist-precios'),{type:'bar',
@@ -1148,12 +1150,12 @@ function buildProveedores(){
       scales:{x:{...AXn,ticks:{...AXn.ticks,maxRotation:35,font:{size:10}}},y:{...AXw}}}});
 
   // Gráfico dispersión: precio real vs justiprecio
-  const scatterData = precItems.map(r=>({
+  const scatterData = _precDedup.map(r=>({
     x: r._j, y: r._p,
     label: r.Descripcion.substring(0,40),
     desv: r._desv
   }));
-  const maxVal = Math.max(...precItems.map(r=>Math.max(r._j,r._p)));
+  const maxVal = Math.max(..._precDedup.map(r=>Math.max(r._j,r._p)));
   dc('ch-scatter-precios');
   CH['ch-scatter-precios']=new Chart($('ch-scatter-precios'),{type:'scatter',
     data:{datasets:[
@@ -1173,7 +1175,7 @@ function buildProveedores(){
       }}});
 
   // Tabla: top 20 por desvío absoluto
-  const top20 = [...precItems].sort((a,b)=>Math.abs(b._desv)-Math.abs(a._desv)).slice(0,20);
+  const top20 = [..._precDedup].sort((a,b)=>Math.abs(b._desv)-Math.abs(a._desv)).slice(0,20);
   const tbody = $('t-desvios').querySelector('tbody');
   if(!top20.length){tbody.innerHTML='<tr><td colspan="7"><div class="empty-state">Sin ítems con datos de precio comparables</div></td></tr>';return;}
   tbody.innerHTML = top20.map(r=>`
@@ -1367,7 +1369,7 @@ function buildDatos(){
 }
 function rDatos(){
   const fr=$('fd-r').value,fa=$('fd-a').value,fx=$('fd-x').value,fd=$('fd-d').value,fo=$('fd-o').value;
-  const rows=DATA_ANALISIS.filter(r=>(!fr||r.Rubro===fr)&&(!fa||r.Clase_ABC_Monto===fa)&&(!fx||r.Clase_XYZ===fx)&&(!fd||r.Es_Desierto===fd)&&(!fo||r.Tiene_OC===fo)).sort((a,b)=>b.Monto_Total-a.Monto_Total);
+  const rows=dedupAlertas(DATA_ANALISIS.filter(r=>(!fr||r.Rubro===fr)&&(!fa||r.Clase_ABC_Monto===fa)&&(!fx||r.Clase_XYZ===fx)&&(!fd||r.Es_Desierto===fd)&&(!fo||r.Tiene_OC===fo))).sort((a,b)=>b.Monto_Total-a.Monto_Total);
   $('data-cnt').textContent=rows.length.toLocaleString('es-AR')+' ítems';
   document.querySelector('#t-datos tbody').innerHTML=rows.map(r=>`<tr>
     <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.Descripcion}">${r.Descripcion}</td>
@@ -1408,9 +1410,33 @@ dz.addEventListener('drop',e=>{e.preventDefault();dz.style.borderColor='';
   const f=e.dataTransfer.files[0];if(f){const dt=new DataTransfer();dt.items.add(f);$('file-inp').files=dt.files;reloadCSV({target:{files:dt.files}})}});
 
 // ── ALERTAS ───────────────────────────────────────────────────────────────────
+// Deduplica un array por Codigo, priorizando filas de hojas normales (no DESIERTOS)
+function dedupAlertas(rows){
+  const HOJAS_DES = new Set(['DESIERTOS','ESTERILIZACION DESIERTOS']);
+  const map = {};
+  rows.forEach(r => {
+    const k = (r.Codigo||'').trim();
+    if(!k) return;
+    if(!map[k]){
+      map[k] = r;
+    } else {
+      const prev = map[k];
+      // Preferir hoja normal sobre DESIERTOS
+      const prevDes = HOJAS_DES.has(prev.Rubro);
+      const currDes = HOJAS_DES.has(r.Rubro);
+      if(prevDes && !currDes){
+        map[k] = r; // reemplazar con la fila de hoja normal
+      } else if(prevDes === currDes){
+        // misma categoría → quedarse con mayor monto
+        if(Number(r.Monto_Total||0) > Number(prev.Monto_Total||0)) map[k] = r;
+      }
+    }
+  });
+  return Object.values(map);
+}
 function buildAlertas(){
   // AX sin OC
-  const ax = DATA_ANALISIS.filter(r=>r.Clase_ABC_Monto==='A'&&r.Clase_XYZ==='X'&&r.Tiene_OC==='NO'&&r.Es_Desierto==='NO');
+  const ax = dedupAlertas(DATA_ANALISIS.filter(r=>r.Clase_ABC_Monto==='A'&&r.Clase_XYZ==='X'&&r.Tiene_OC==='NO'&&r.Es_Desierto==='NO'));
   const ax_m = ax.reduce((s,r)=>s+Number(r.Monto_Total||0),0);
   $('kpi-ax').innerHTML=
     kpiCard('r','Ítems AX sin OC',ax.length,'Requieren acción inmediata',
@@ -1427,7 +1453,7 @@ function buildAlertas(){
     </tr>`).join('');
 
   // AZ
-  const az = DATA_ANALISIS.filter(r=>r.Clase_ABC_Monto==='A'&&r.Clase_XYZ==='Z'&&r.Es_Desierto==='NO');
+  const az = dedupAlertas(DATA_ANALISIS.filter(r=>r.Clase_ABC_Monto==='A'&&r.Clase_XYZ==='Z'&&r.Es_Desierto==='NO'));
   const az_m = az.reduce((s,r)=>s+Number(r.Monto_Total||0),0);
   $('kpi-az').innerHTML=
     kpiCard('p','Ítems AZ',az.length,'Alto gasto + demanda errática',
@@ -1451,7 +1477,7 @@ function buildAlertas(){
     </tr>`).join('');
 
   // Sin OC top 20
-  const sinOC = DATA_ANALISIS.filter(r=>r.Tiene_OC==='NO'&&r.Es_Desierto==='NO'&&Number(r.Monto_Total)>0)
+  const sinOC = dedupAlertas(DATA_ANALISIS.filter(r=>r.Tiene_OC==='NO'&&r.Es_Desierto==='NO'&&Number(r.Monto_Total)>0))
     .sort((a,b)=>b.Monto_Total-a.Monto_Total).slice(0,20);
   document.querySelector('#t-sin-oc tbody').innerHTML=sinOC.map(r=>`<tr>
     <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.Descripcion}">${r.Descripcion}</td>
