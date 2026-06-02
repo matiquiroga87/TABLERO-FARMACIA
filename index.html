@@ -406,7 +406,7 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
 <div class="page on" id="pg-resumen">
   <div class="kpis" id="kpi-res"></div>
   <div class="g2">
-    <div class="card"><div class="ctitle">Monto por rubro</div><div style="height:520px;position:relative"><canvas id="ch-rub"></canvas></div></div>
+    <div class="card"><div class="ctitle">Monto por rubro</div><div style="height:320px;position:relative"><canvas id="ch-rub"></canvas></div></div>
     <div class="card"><div class="ctitle">Adjudicados vs desiertos</div><div style="height:340px;position:relative"><canvas id="ch-des"></canvas></div></div>
   </div>
   <div class="card"><div class="ctitle">Ejecución presupuestal por rubro</div><div id="ejec-bars"></div></div>
@@ -856,36 +856,47 @@ function buildResumen(){
   DATA_ANALISIS.forEach(r=>{rm[r.Rubro]=(rm[r.Rubro]||0)+Number(r.Monto_Total||0)});
   const rs=Object.entries(rm).sort((a,b)=>b[1]-a[1]);
   dc('ch-rub');
-  // Paleta degradada por posición: del más costoso (cálido) al menos (frío)
-  const _rubPalette = [
-    'rgba(248,81,73,.80)',   // rojo    — 1er (mayor monto)
-    'rgba(240,100,60,.78)',  // naranja-rojo
-    'rgba(247,129,102,.76)', // naranja
-    'rgba(227,179,65,.78)',  // amarillo
-    'rgba(210,185,65,.76)',  // amarillo-verde
-    'rgba(88,200,120,.76)',  // verde claro
-    'rgba(63,185,80,.78)',   // verde
-    'rgba(50,180,140,.76)',  // verde-cian
-    'rgba(39,211,195,.76)',  // cian
-    'rgba(57,211,195,.74)',  // cian claro
-    'rgba(88,166,255,.80)',  // azul brillante
-    'rgba(88,150,255,.76)',  // azul
-    'rgba(100,140,255,.74)', // azul-violeta
-    'rgba(130,120,255,.74)', // violeta
-    'rgba(160,110,255,.74)', // violeta claro
-    'rgba(188,140,255,.76)', // lavanda
-    'rgba(200,130,200,.74)', // rosa-violeta
-    'rgba(210,120,180,.72)', // rosa
-  ];
-  CH['ch-rub']=new Chart($('ch-rub'),{type:'bar',
+  CH['ch-rub']=new Chart($('ch-rub'),{type:'doughnut',
     data:{labels:rs.map(r=>r[0]),datasets:[{
       data:rs.map(r=>r[1]),
-      backgroundColor:rs.map((_,i)=>_rubPalette[i]||'rgba(139,148,158,.6)'),
-      borderRadius:4
+      backgroundColor:[
+        'rgba(248,81,73,.85)','rgba(240,100,60,.82)','rgba(247,129,102,.82)',
+        'rgba(227,179,65,.82)','rgba(210,185,65,.80)','rgba(88,200,120,.82)',
+        'rgba(63,185,80,.85)','rgba(50,180,140,.82)','rgba(39,211,195,.82)',
+        'rgba(57,200,195,.80)','rgba(88,166,255,.85)','rgba(88,150,255,.82)',
+        'rgba(100,140,255,.80)','rgba(130,120,255,.80)','rgba(160,110,255,.80)',
+        'rgba(188,140,255,.82)','rgba(200,130,200,.80)','rgba(210,120,180,.78)',
+      ],
+      borderColor:'#161b22',
+      borderWidth:2,
+      hoverOffset:8
     }]},
-    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},
-      scales:{x:{...AXw,ticks:{...AXw.ticks,callback:v=>fmt(v)}},y:{...AXn,ticks:{...AXn.ticks,font:{size:11}}}}}});
+    options:{responsive:true,maintainAspectRatio:false,cutout:'52%',
+      plugins:{
+        legend:{
+          display:true,
+          position:'right',
+          labels:{color:'#c9d1d9',font:{size:9},boxWidth:10,padding:6,
+            generateLabels: chart => {
+              const total = rs.reduce((s,r)=>s+r[1],0);
+              return rs.map((r,i)=>({
+                text: r[0].length>18?r[0].substring(0,17)+'…':r[0],
+                fillStyle: chart.data.datasets[0].backgroundColor[i],
+                hidden: false, index: i,
+                fontColor:'#c9d1d9'
+              }));
+            }
+          }
+        },
+        tooltip:{callbacks:{
+          label: c => {
+            const total = rs.reduce((s,r)=>s+r[1],0);
+            const pct = total>0?(c.raw/total*100).toFixed(1):'0';
+            return ` ${fmt(c.raw)} (${pct}%)`;
+          }
+        }}
+      }
+    }});
 
   // Adj vs des — usa campo Estado calculado globalmente
   const dm={};
