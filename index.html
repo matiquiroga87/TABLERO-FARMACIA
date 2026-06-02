@@ -130,6 +130,12 @@ body{background:var(--bg);color:var(--tx);font-family:'DM Sans',sans-serif;font-
 footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);border-top:1px solid var(--bord);margin-top:2rem}
 
 /* ── Mejoras visuales adicionales ── */
+/* Ordenamiento de tablas */
+.tbl thead th.sortable{cursor:pointer;user-select:none;white-space:nowrap}
+.tbl thead th.sortable:hover{color:#fff;background:rgba(88,166,255,.12)}
+.tbl thead th.sortable::after{content:' ⇅';font-size:9px;color:var(--muted2);opacity:.6}
+.tbl thead th.sort-asc::after{content:' ↑';color:var(--blue);opacity:1}
+.tbl thead th.sort-desc::after{content:' ↓';color:var(--blue);opacity:1}
 .kpi{transition:transform .15s,box-shadow .15s}
 .kpi:hover{transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.4)}
 .kpi-val{font-variant-numeric:tabular-nums}
@@ -443,15 +449,57 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
   <!-- Vista general -->
   <div id="prov-general">
     <div class="kpis" id="kpi-prov"></div>
-    <div class="g2">
-      <div class="card">
-        <div class="ctitle">Top 15 por monto — clic para ver detalle</div>
-        <div style="height:400px;position:relative"><canvas id="ch-prov"></canvas></div>
+    <!-- Botón filtro Pre-adjudicados / Con OC -->
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center">
+      <span style="font-size:12px;color:var(--muted)">Ver análisis por:</span>
+      <button id="btn-prov-pre" onclick="switchProvVista('pre')"
+        style="padding:5px 14px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid var(--blue);background:var(--blue);color:#fff;font-weight:600;transition:all .2s">
+        Pre-adjudicados
+      </button>
+      <button id="btn-prov-oc" onclick="switchProvVista('oc')"
+        style="padding:5px 14px;border-radius:20px;font-size:12px;cursor:pointer;border:1px solid var(--bord);background:var(--surf2);color:var(--muted);font-weight:400;transition:all .2s">
+        Con OC vigente
+      </button>
+    </div>
+
+    <!-- Vista Pre-adjudicados -->
+    <div id="prov-vista-pre">
+      <div class="g2">
+        <div class="card">
+          <div class="ctitle">Top 15 pre-adjudicados por monto estimado — clic para ver detalle</div>
+          <div style="height:400px;position:relative"><canvas id="ch-prov"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="ctitle">Concentración pre-adjudicados — top 5 vs resto</div>
+          <div style="height:280px;position:relative"><canvas id="ch-prov-pie"></canvas></div>
+          <div class="hhi-box" id="hhi"></div>
+        </div>
       </div>
-      <div class="card">
-        <div class="ctitle">Concentración — top 5 vs resto</div>
-        <div style="height:280px;position:relative"><canvas id="ch-prov-pie"></canvas></div>
-        <div class="hhi-box" id="hhi"></div>
+    </div>
+
+    <!-- Vista Con OC -->
+    <div id="prov-vista-oc" style="display:none">
+      <div class="g2">
+        <div class="card">
+          <div class="ctitle">Top 15 con OC — por monto real adjudicado — clic para ver detalle</div>
+          <div style="height:400px;position:relative"><canvas id="ch-prov-oc"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="ctitle">Concentración con OC — top 5 vs resto</div>
+          <div style="height:280px;position:relative"><canvas id="ch-prov-oc-pie"></canvas></div>
+          <div class="hhi-box" id="hhi-oc"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:12px">
+        <div class="ctitle">Top 15 proveedores con OC vigente</div>
+        <div class="tbl-wrap" style="max-height:380px">
+          <table class="tbl" id="t-prov-oc">
+            <thead><tr>
+              <th>Proveedor</th><th>Ítems con OC</th><th>Monto real adj.</th><th>% del total</th><th>Rubros</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </div>
     <div class="frow" style="margin-top:4px">
@@ -500,7 +548,9 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
     <div class="kpis" id="kpi-prov-det"></div>
     <div class="g2">
       <div class="card">
-        <div class="ctitle">Gasto por rubro</div>
+        <div class="ctitle" title="Gasto por rubro correspondiente a órdenes de compra vigentes (col AA, precio real del proveedor)" style="cursor:help">
+          Gasto por rubro <span style="font-size:10px;color:var(--muted2);font-weight:400">ⓘ OC vigentes</span>
+        </div>
         <div style="height:320px;position:relative"><canvas id="ch-pd-rubro"></canvas></div>
       </div>
       <div class="card">
@@ -515,7 +565,9 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
         <table class="tbl" id="t-prov-det">
           <thead><tr>
             <th>Descripción</th><th>Rubro</th><th>ABC</th><th>XYZ</th>
-            <th>Monto</th><th>Justiprecio</th><th>Cantidad</th><th>OC</th>
+            <th title="Precio real (con OC) o Justiprecio (sin OC)">Precio unit.</th>
+            <th title="Monto adjudicado real (con OC) o Monto estimado (sin OC)">Monto</th>
+            <th>Cantidad</th><th>OC</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -734,6 +786,71 @@ function updateBreadcrumb(pageId, extra){
     : `Tablero <span>›</span> <span>${name}</span>`;
 }
 
+
+// ── Ordenamiento de tablas ────────────────────────────────────────────────────
+const _sortState = {}; // tableId → {col, asc}
+
+function initSortable(tableId){
+  const tbl = document.getElementById(tableId);
+  if(!tbl) return;
+  const ths = tbl.querySelectorAll('thead th');
+  ths.forEach((th, i) => {
+    // No ordenar columnas de badges puros (OC, Desierto, Acción, Tendencia, Estado)
+    const txt = th.textContent.trim();
+    const skipCols = ['Acción','Tendencia','Estado'];
+    if(skipCols.includes(txt)) return;
+    th.classList.add('sortable');
+    th.addEventListener('click', () => sortTable(tableId, i, th));
+  });
+}
+
+function sortTable(tableId, colIdx, thEl){
+  const tbl = document.getElementById(tableId);
+  if(!tbl) return;
+  const state = _sortState[tableId] || {col:-1, asc:true};
+  const asc = state.col === colIdx ? !state.asc : true;
+  _sortState[tableId] = {col: colIdx, asc};
+
+  // Limpiar clases de todas las cabeceras
+  tbl.querySelectorAll('thead th').forEach(th => th.classList.remove('sort-asc','sort-desc'));
+  thEl.classList.add(asc ? 'sort-asc' : 'sort-desc');
+
+  // Ordenar filas del tbody
+  const tbody = tbl.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+
+  rows.sort((a, b) => {
+    const cellA = a.cells[colIdx]?.textContent.trim() || '';
+    const cellB = b.cells[colIdx]?.textContent.trim() || '';
+
+    // Intentar ordenar como número (quitar $, %, comas, espacios)
+    const numA = parseFloat(cellA.replace(/[$%,.\s]/g, '').replace(',','.'));
+    const numB = parseFloat(cellB.replace(/[$%,.\s]/g, '').replace(',','.'));
+
+    // Detectar formato moneda argentina ($1.234.567)
+    const moneyA = parseFloat(cellA.replace(/\$/g,'').replace(/\./g,'').replace(',','.'));
+    const moneyB = parseFloat(cellB.replace(/\$/g,'').replace(/\./g,'').replace(',','.'));
+
+    let cmp;
+    if(!isNaN(moneyA) && !isNaN(moneyB) && cellA.includes('$')) {
+      cmp = moneyA - moneyB;
+    } else if(!isNaN(numA) && !isNaN(numB)) {
+      cmp = numA - numB;
+    } else {
+      cmp = cellA.localeCompare(cellB, 'es', {sensitivity:'base'});
+    }
+    return asc ? cmp : -cmp;
+  });
+
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+// Inicializar todas las tablas al cargar
+function initAllSortable(){
+  ['t-ax','t-az','t-sin-oc','t-rubro','t-hist','t-stock-masivo',
+   't30','t-xyz','t-desvios','t-prov-det','t-datos'].forEach(initSortable);
+}
+
 // Set date
 const bd = new Date().toLocaleDateString('es-AR');
 $('ts').textContent = '· Datos al '+bd;
@@ -813,18 +930,49 @@ function buildResumen(){
       totalConPedido.toLocaleString('es-AR'),
       totalConPedido.toLocaleString('es-AR')+' de '+totalInsumos.toLocaleString('es-AR')+' · '+pctConPedido.toFixed(1)+'%',
       'Insumos <strong>únicos</strong> que tienen Cantidad Pedida > 0 en el corriente año (col R). Se requiere código vademecum (col A) y descripción (col B) presentes. Deduplicado por código: si el mismo insumo aparece en varios rubros, se cuenta una sola vez. El <strong>'+pctConPedido.toFixed(1)+'%</strong> representa la cobertura de compra sobre el total de insumos únicos.',pctConPedido) +
-    kpiCard('y','Con OC confirmada',
-      S.con_oc.toLocaleString('es-AR'),
-      S.pct_items.toFixed(1)+'% de los renglones',
-      'Renglones con número de Orden de Compra registrado en col P. Indica que la compra fue formalizada y está en proceso de entrega o ya entregada. <br><strong>Fórmula:</strong> Ítems con OC ÷ Total renglones × 100.',S.pct_items) +
-    kpiCard('r','Ítems desiertos',
-      S.des.toLocaleString('es-AR'),
-      (S.des/S.total*100).toFixed(1)+'% del total de renglones',
-      'Renglones donde el proveedor figura como <em>Desierto</em> en col M. Incluye desiertos embebidos en cada hoja de rubro + hojas DESIERTOS y ESTERILIZACION DESIERTOS. Un ítem desierto = la licitación no tuvo oferentes válidos para ese renglón.',S.des/S.total*100) +
-    kpiCard('p','Sin OC (pendiente)',
-      (S.total-S.con_oc).toLocaleString('es-AR'),
-      (100-S.pct_items).toFixed(1)+'% por formalizar',
-      'Renglones adjudicados sin Orden de Compra emitida aún (col P vacía). Representa el presupuesto comprometido pero todavía no formalizado en una OC.') +
+    (() => {
+      const _conOCUniq = new Set(
+        DATA_ANALISIS.filter(r=>r.Tiene_OC==='SI').map(r=>(r.Codigo||'').trim()).filter(c=>c)
+      ).size;
+      const _pctOCsobre = totalConPedido > 0 ? (_conOCUniq / totalConPedido * 100) : 0;
+      return kpiCard('y','Con OC confirmada',
+        _conOCUniq.toLocaleString('es-AR'),
+        _pctOCsobre.toFixed(1)+'% de los que tienen compra solicitada',
+        'Insumos únicos con Orden de Compra confirmada (col P). El porcentaje se calcula sobre los <strong>'+totalConPedido.toLocaleString('es-AR')+' insumos con compra solicitada</strong> (Cantidad Pedida > 0), no sobre el total de renglones. <br><strong>Fórmula:</strong> Con OC únicos ÷ Con compra solicitada únicos × 100.',
+        _pctOCsobre);
+    })() +
+    (() => {
+      // Desiertos usando campo Estado: incluye los que tienen proveedor pero
+      // cuya solicitud ya tiene OC en otros renglones (desiertos por solicitud)
+      const _nDes = DATA_ANALISIS.filter(r=>r.Estado==='Desierto').length;
+      const _nDesUniq = new Set(
+        DATA_ANALISIS.filter(r=>r.Estado==='Desierto').map(r=>(r.Codigo||'').trim()).filter(c=>c)
+      ).size;
+      const _nDesFlagged = DATA_ANALISIS.filter(r=>r.Es_Desierto==='SI').length;
+      const _nDesSol = _nDes - _nDesFlagged; // extra por lógica de solicitudes
+      return kpiCard('r','Ítems desiertos',
+        _nDes.toLocaleString('es-AR'),
+        _nDesUniq.toLocaleString('es-AR')+' únicos · '+_nDesFlagged+' declarados + '+_nDesSol+' por solicitud',
+        'Renglones clasificados como desiertos según la lógica de solicitudes: incluye los que el proveedor declara como <em>Desierto</em> ('+_nDesFlagged+' renglones) <strong>más</strong> aquellos que tienen proveedor asignado pero cuya solicitud ya tiene OC emitida en otros renglones ('+_nDesSol+' renglones adicionales). Total de insumos únicos desiertos: '+_nDesUniq+'.',
+        _nDes/DATA_ANALISIS.length*100);
+    })() +
+    (() => {
+      // Sin OC: insumos únicos con pedido pero sin OC confirmada
+      const _sinOCSet = new Set([...conPedido].filter(c => !Array.from(
+        DATA_ANALISIS.filter(r=>r.Tiene_OC==='SI').map(r=>(r.Codigo||'').trim())
+      ).includes(c)));
+      // Más eficiente: restar sets
+      const _conOCSet = new Set(
+        DATA_ANALISIS.filter(r=>r.Tiene_OC==='SI').map(r=>(r.Codigo||'').trim()).filter(c=>c)
+      );
+      const _sinOC = [...conPedido].filter(c=>!_conOCSet.has(c));
+      const _pctSinOC = totalConPedido>0?(_sinOC.length/totalConPedido*100):0;
+      return kpiCard('p','Sin OC (pendiente)',
+        _sinOC.length.toLocaleString('es-AR'),
+        _sinOC.length+' de '+totalConPedido.toLocaleString('es-AR')+' con pedido · '+_pctSinOC.toFixed(1)+'%',
+        'Insumos únicos que tienen compra solicitada (Cantidad Pedida > 0) pero aún no tienen Orden de Compra confirmada. <br><strong>Fórmula:</strong> Con compra solicitada − Con OC confirmada = '+totalConPedido.toLocaleString('es-AR')+' − '+_conOCSet.size.toLocaleString('es-AR')+'. <br>Solo incluye ítems con gestión realizada, excluyendo los sin proveedor asignado.',
+        _pctSinOC);
+    })() +
     kpiCard('c','Relicitados adjudicados',
       totalRelicitados.toLocaleString('es-AR'),
       'Insumos declarados desiertos que obtuvieron OC',
@@ -1056,9 +1204,27 @@ function buildProveedores(){
     kpiCard('y','Índice HHI',hhi.toFixed(4),
       hhi>.25?'Alta concentración':hhi>.15?'Moderada':'Baja',
       'El <strong>Índice Herfindahl-Hirschman (HHI)</strong> mide concentración. HHI > 0.25 = alta (riesgo). HHI 0.15–0.25 = moderada. HHI < 0.15 = mercado competitivo.')+
-    kpiCard('g','Mayor proveedor',ps[0]?.[0]||'',
-      fmt(ps[0]?.[1]?.m||0)+' · '+(ps[0]?.[1]?.m/tm*100||0).toFixed(1)+'% del gasto',
-      'El proveedor con mayor monto adjudicado. Porcentaje >20% implica riesgo de dependencia crítica.');
+    kpiCard('','Mayor proveedor pre-adj.',ps[0]?.[0]||'',
+      fmt(ps[0]?.[1]?.m||0)+' · '+(ps[0]?.[1]?.m/tm*100||0).toFixed(1)+'% del gasto estimado',
+      'El proveedor con mayor monto pre-adjudicado (justiprecio estimado, con o sin OC). Porcentaje >20% implica riesgo de dependencia crítica.')+
+    kpiCard('g','Mayor proveedor con OC',
+      (() => {
+        const pocMap = {};
+        DATA_ANALISIS.filter(r=>r.Tiene_OC==='SI'&&r.Proveedor&&!['desierto','desierta',''].includes(r.Proveedor.toLowerCase()))
+          .forEach(r=>{ pocMap[r.Proveedor]=(pocMap[r.Proveedor]||0)+Number(r.Monto_Adjudicado||0); });
+        const top = Object.entries(pocMap).sort((a,b)=>b[1]-a[1])[0];
+        const totalOC = Object.values(pocMap).reduce((s,v)=>s+v,0);
+        return top ? `${top[0]}|||${fmt(top[1])}|||${totalOC>0?(top[1]/totalOC*100).toFixed(1):0}` : '—|||—|||0';
+      })().split('|||')[0],
+      (() => {
+        const pocMap = {};
+        DATA_ANALISIS.filter(r=>r.Tiene_OC==='SI'&&r.Proveedor&&!['desierto','desierta',''].includes(r.Proveedor.toLowerCase()))
+          .forEach(r=>{ pocMap[r.Proveedor]=(pocMap[r.Proveedor]||0)+Number(r.Monto_Adjudicado||0); });
+        const top = Object.entries(pocMap).sort((a,b)=>b[1]-a[1])[0];
+        const totalOC = Object.values(pocMap).reduce((s,v)=>s+v,0);
+        return top ? fmt(top[1])+' · '+(totalOC>0?(top[1]/totalOC*100).toFixed(1):0)+'% del monto adj.' : '—';
+      })(),
+      'El proveedor con mayor monto real adjudicado (col AA, solo ítems con OC vigente). Porcentaje calculado sobre el total del monto adjudicado real.');
 
   // Populate select filter
   const sel=$('sel-prov');
@@ -1090,6 +1256,55 @@ function buildProveedores(){
       onClick(evt,el){if(el.length&&el[0].index<5){verProv(ps[el[0].index][0])}}}});
 
   $('hhi').innerHTML=`<strong>HHI = ${hhi.toFixed(4)}</strong> — ${hhi>.25?'<span style="color:var(--red)">Concentración alta</span>':hhi>.15?'<span style="color:var(--yel)">Concentración moderada</span>':'<span style="color:var(--green)">Concentración baja</span>'}<br><span style="font-size:11px;display:block;margin-top:4px">Proveedor dominante: <strong>${ps[0]?.[0]}</strong> con ${(ps[0]?.[1]?.m/tm*100||0).toFixed(1)}% del gasto total.</span>`;
+
+  // ── Gráficos Con OC vigente ───────────────────────────────────────────────
+  const pmOC = {};
+  DATA_ANALISIS.filter(r=>r.Tiene_OC==='SI'&&r.Proveedor&&!['desierto','desierta',''].includes(r.Proveedor.toLowerCase()))
+    .forEach(r=>{
+      if(!pmOC[r.Proveedor]) pmOC[r.Proveedor]={m:0,n:0,rubros:new Set()};
+      pmOC[r.Proveedor].m += Number(r.Monto_Adjudicado||0);
+      pmOC[r.Proveedor].n++;
+      pmOC[r.Proveedor].rubros.add(r.Rubro);
+    });
+  const psOC  = Object.entries(pmOC).sort((a,b)=>b[1].m-a[1].m);
+  const tmOC  = psOC.reduce((s,p)=>s+p[1].m,0);
+  const p15OC = psOC.slice(0,15);
+  const hhiOC = psOC.reduce((s,p)=>s+Math.pow(p[1].m/tmOC,2),0);
+
+  dc('ch-prov-oc');
+  CH['ch-prov-oc']=new Chart($('ch-prov-oc'),{type:'bar',
+    data:{labels:p15OC.map(p=>p[0]),datasets:[{data:p15OC.map(p=>p[1].m),
+      backgroundColor:p15OC.map(p=>{const pct=p[1].m/tmOC*100;return pct>=20?'rgba(248,81,73,.8)':pct>=10?'rgba(227,179,65,.8)':pct>=5?'rgba(63,185,80,.75)':'rgba(139,148,158,.55)'}),
+      borderRadius:3}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},
+               tooltip:{callbacks:{label:c=>`${fmt(c.raw)} (${(c.raw/tmOC*100).toFixed(1)}%)`}}},
+      onClick(evt,el){if(el.length){verProv(p15OC[el[0].index][0])}},
+      scales:{x:{...AXw,ticks:{...AXw.ticks,callback:v=>fmt(v)}},y:{...AXn}}}});
+
+  const otrosOC = psOC.slice(5).reduce((s,p)=>s+p[1].m,0);
+  dc('ch-prov-oc-pie');
+  CH['ch-prov-oc-pie']=new Chart($('ch-prov-oc-pie'),{type:'doughnut',
+    data:{labels:[...psOC.slice(0,5).map(p=>p[0]),'Otros'],
+      datasets:[{data:[...psOC.slice(0,5).map(p=>p[1].m),otrosOC],
+        backgroundColor:['rgba(63,185,80,.85)','rgba(88,166,255,.85)','rgba(227,179,65,.85)','rgba(188,140,255,.85)','rgba(39,211,195,.85)','rgba(139,148,158,.5)'],
+        borderColor:'#161b22',borderWidth:3}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'55%',
+      plugins:{legend:{labels:{color:'#fff',font:{size:11}}},
+               tooltip:{callbacks:{label:c=>`${fmt(c.raw)} (${(c.raw/tmOC*100).toFixed(1)}%)`}}},
+      onClick(evt,el){if(el.length&&el[0].index<5){verProv(psOC[el[0].index][0])}}}});
+
+  $('hhi-oc').innerHTML=`<strong>HHI (OC) = ${hhiOC.toFixed(4)}</strong> — ${hhiOC>.25?'<span style="color:var(--red)">Concentración alta</span>':hhiOC>.15?'<span style="color:var(--yel)">Concentración moderada</span>':'<span style="color:var(--green)">Concentración baja</span>'}<br><span style="font-size:11px;display:block;margin-top:4px">Proveedor dominante: <strong>${psOC[0]?.[0]}</strong> con ${tmOC>0?(psOC[0]?.[1]?.m/tmOC*100).toFixed(1):0}% del monto adjudicado.</span>`;
+
+  // Tabla top 15 con OC
+  document.querySelector('#t-prov-oc tbody').innerHTML = p15OC.map((p,i)=>`<tr>
+    <td style="cursor:pointer;color:var(--blue)" onclick="verProv('${p[0].replace(/'/g,"\'")}')"><strong>${p[0]}</strong></td>
+    <td class="mono" style="text-align:center">${p[1].n}</td>
+    <td class="mono" style="color:var(--green);font-weight:600">${fmt(p[1].m)}</td>
+    <td class="mono">${tmOC>0?(p[1].m/tmOC*100).toFixed(1):'0'}%</td>
+    <td style="font-size:11px;color:var(--muted)">${[...p[1].rubros].join(', ').substring(0,50)}</td>
+  </tr>`).join('');
+  setTimeout(()=>initSortable('t-prov-oc'), 50);
 
   // ── Análisis de precios: Real vs Justiprecio ──────────────────────────────
   // Solo ítems con OC, justiprecio > 0 y precio_proveedor > 0
@@ -1194,6 +1409,24 @@ function buildProveedores(){
     </tr>`).join('');
 }
 
+
+function switchProvVista(vista){
+  const isPre = vista === 'pre';
+  $('prov-vista-pre').style.display = isPre ? '' : 'none';
+  $('prov-vista-oc').style.display  = isPre ? 'none' : '';
+  const btnPre = $('btn-prov-pre');
+  const btnOC  = $('btn-prov-oc');
+  if(btnPre && btnOC){
+    btnPre.style.background    = isPre ? 'var(--blue)' : 'var(--surf2)';
+    btnPre.style.color         = isPre ? '#fff' : 'var(--muted)';
+    btnPre.style.borderColor   = isPre ? 'var(--blue)' : 'var(--bord)';
+    btnPre.style.fontWeight    = isPre ? '600' : '400';
+    btnOC.style.background     = isPre ? 'var(--surf2)' : 'var(--green)';
+    btnOC.style.color          = isPre ? 'var(--muted)' : '#fff';
+    btnOC.style.borderColor    = isPre ? 'var(--bord)' : 'var(--green)';
+    btnOC.style.fontWeight     = isPre ? '400' : '600';
+  }
+}
 function volverProveedores(){
   $('prov-detalle').style.display='none';
   $('prov-general').style.display='block';
@@ -1227,31 +1460,60 @@ function verProv(nombre){
   $('prov-sub').textContent=`${cant} ítems · ${rubros} rubros · ${pctMonto}% del gasto total`;
 
   // KPIs del proveedor
+  const montoAdjReal = items.filter(r=>r.Tiene_OC==='SI').reduce((s,r)=>s+Number(r.Monto_Adjudicado||0),0);
+  const totalAdjReal = DATA_ANALISIS.filter(r=>r.Tiene_OC==='SI').reduce((s,r)=>s+Number(r.Monto_Adjudicado||0),0);
+  const pctAdjReal   = totalAdjReal>0?(montoAdjReal/totalAdjReal*100).toFixed(1):'0';
+
   $('kpi-prov-det').innerHTML=
-    kpiCard('','Monto total adjudicado',fmt(monto),pctMonto+'% del gasto total',
-      'Suma de Monto_Total de todos los ítems de este proveedor en todas las hojas del archivo.')+
-    kpiCard('y','Ítems adjudicados',cant,rubros+' rubros distintos',
-      'Cantidad de renglones en los que este proveedor resultó adjudicado en la licitación 2026.')+
-    kpiCard('g','Con OC emitida',conOC,pctEjec+'% de ejecución',
+    kpiCard('g','Monto real adjudicado',fmt(montoAdjReal),
+      pctAdjReal+'% del total adjudicado · '+conOC+' ítems con OC',
+      'Suma de col AA (Monto Total adjudicado s/Precio Proveedor) para los ítems de este proveedor con OC emitida. Refleja el gasto real comprometido.')+
+    kpiCard('','Monto pre-adjudicado',fmt(monto),pctMonto+'% del gasto total estimado',
+      'Suma de Monto_Total (justiprecio estimado) de todos los ítems de este proveedor. Incluye ítems con y sin OC. Es el valor estimado, no el real.')+
+    kpiCard('y','Ítems pre-adjudicados',cant,rubros+' rubros distintos',
+      'Cantidad de renglones en los que este proveedor figura como adjudicado o pre-adjudicado en la licitación 2026, incluyendo los que aún no tienen OC.')+
+    kpiCard('y','Con OC emitida',conOC,pctEjec+'% de ejecución',
       'Renglones de este proveedor que ya tienen Orden de Compra confirmada (col P no vacía).')+
     kpiCard('r','Sin OC (pendiente)',cant-conOC,(100-Number(pctEjec)).toFixed(1)+'% pendiente',
-      'Renglones adjudicados a este proveedor que aún no tienen OC emitida.');
+      'Renglones pre-adjudicados a este proveedor que aún no tienen OC emitida.');
 
-  // Monto por rubro
+  // Monto por rubro — solo ítems con OC usando Monto_Adjudicado (precio real)
   const rm={};
-  items.forEach(r=>{rm[r.Rubro]=(rm[r.Rubro]||0)+Number(r.Monto_Total||0)});
+  items.filter(r=>r.Tiene_OC==='SI').forEach(r=>{
+    rm[r.Rubro]=(rm[r.Rubro]||0)+Number(r.Monto_Adjudicado||0)
+  });
   const rs=Object.entries(rm).filter(e=>e[1]>0).sort((a,b)=>b[1]-a[1]);
+  // Paleta rojo (mayor) → verde (menor)
+  const _rubroColors = [
+    'rgba(248,81,73,.85)','rgba(240,110,70,.82)','rgba(247,140,90,.80)',
+    'rgba(230,165,70,.80)','rgba(220,185,65,.78)','rgba(180,195,65,.76)',
+    'rgba(130,200,80,.78)','rgba(88,200,100,.78)','rgba(63,185,80,.82)',
+  ];
+  const _getColor = i => _rubroColors[Math.min(i, _rubroColors.length-1)];
   dc('ch-pd-rubro');
   CH['ch-pd-rubro']=new Chart($('ch-pd-rubro'),{type:'bar',
-    data:{labels:rs.map(r=>r[0]),datasets:[{data:rs.map(r=>r[1]),
-      backgroundColor:'rgba(88,166,255,.75)',borderRadius:3}]},
+    data:{labels:rs.map(r=>r[0]),datasets:[{
+      data:rs.map(r=>r[1]),
+      backgroundColor:rs.map((_,i)=>_getColor(i)),
+      borderRadius:3
+    }]},
     options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${fmt(c.raw)} (${(c.raw/monto*100).toFixed(1)}% del prov.)`}}},
+      plugins:{
+        legend:{display:false},
+        tooltip:{callbacks:{
+          title: items => items[0].label,
+          label: c => [
+            `Gasto real: ${fmt(c.raw)}`,
+            `Participación: ${montoAdjReal>0?(c.raw/montoAdjReal*100).toFixed(1):0}% del proveedor`,
+            '— Basado en órdenes de compra vigentes —'
+          ]
+        }}
+      },
       scales:{x:{...AXw,ticks:{...AXw.ticks,callback:v=>fmt(v)}},y:{...AXn}}}});
 
-  // ABC de sus ítems
+  // ABC de sus ítems — solo los que tienen OC (adjudicados reales)
   const abc={A:0,B:0,C:0,'Sin monto':0};
-  items.forEach(r=>{const c=r.Clase_ABC_Monto||'Sin monto';if(abc[c]!==undefined)abc[c]++;else abc['Sin monto']++});
+  items.filter(r=>r.Tiene_OC==='SI').forEach(r=>{const c=r.Clase_ABC_Monto||'Sin monto';if(abc[c]!==undefined)abc[c]++;else abc['Sin monto']++});
   dc('ch-pd-abc');
   CH['ch-pd-abc']=new Chart($('ch-pd-abc'),{type:'doughnut',
     data:{labels:['Clase A','Clase B','Clase C','Sin monto'],
@@ -1270,40 +1532,67 @@ function verProv(nombre){
       <div style="background:rgba(139,148,158,.1);border:1px solid var(--bord);border-radius:6px;padding:6px;text-align:center"><span style="color:#c9d1d9;font-weight:600;font-size:16px">${abc.C}</span><br><span style="color:var(--muted)">Clase C</span></div>
     </div>`;
 
-  // Tabla de ítems
-  const sorted=items.sort((a,b)=>b.Monto_Total-a.Monto_Total);
-  document.querySelector('#t-prov-det tbody').innerHTML=sorted.map(r=>`<tr>
-    <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.Descripcion}">${r.Descripcion}</td>
+  // Re-inicializar sort tras regenerar la tabla del proveedor
+  setTimeout(()=>initSortable('t-prov-det'), 50);
+  // Tabla de ítems: con OC primero, luego sin OC
+  // Para ítems con OC muestra precio real; para sin OC muestra justiprecio
+  const sorted=[
+    ...items.filter(r=>r.Tiene_OC==='SI').sort((a,b)=>Number(b.Monto_Adjudicado||0)-Number(a.Monto_Adjudicado||0)),
+    ...items.filter(r=>r.Tiene_OC==='NO').sort((a,b)=>b.Monto_Total-a.Monto_Total)
+  ];
+  document.querySelector('#t-prov-det tbody').innerHTML=sorted.map(r=>{
+    const tieneOC = r.Tiene_OC==='SI';
+    const precioMostrar = tieneOC ? Number(r.Precio_Proveedor||0) : Number(r.Justiprecio||0);
+    const montoMostrar  = tieneOC ? Number(r.Monto_Adjudicado||0) : Number(r.Monto_Total||0);
+    const labelPrecio   = tieneOC ? 'Precio real' : 'Justiprecio';
+    const labelMonto    = tieneOC ? 'Monto adj.' : 'Monto est.';
+    return `<tr style="${tieneOC?'':'opacity:.75'}">
+    <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.Descripcion}">${r.Descripcion}</td>
     <td style="font-size:11px;color:var(--muted)">${r.Rubro}</td>
     <td>${badge(r.Clase_ABC_Monto)}</td>
     <td>${badge(r.Clase_XYZ)}</td>
-    <td class="mono">${fmt(r.Monto_Total)}</td>
-    <td class="mono">${fmt(r.Justiprecio)}</td>
+    <td class="mono" title="${labelPrecio}">${precioMostrar>0?fmt(precioMostrar):'—'}</td>
+    <td class="mono" title="${labelMonto}" style="color:${tieneOC?'var(--green)':'var(--muted)'};font-weight:${tieneOC?'600':'400'}">${montoMostrar>0?fmt(montoMostrar):'—'}</td>
     <td class="mono">${fmtN(r.Cantidad_Pedida)}</td>
     <td>${badge(r.Tiene_OC,'')}</td>
-  </tr>`).join('');
+  </tr>`;}).join('');
 }
 
 // ── EJECUCION ──────────────────────────────────────────────────────────────────
 function buildEjecucion(){
   const S=STATS;
+  // Calcular dinámicamente montos de ejecución con la lógica correcta
+  const _montoOCReal   = DATA_ANALISIS.filter(r=>r.Tiene_OC==='SI')
+                           .reduce((s,r)=>s+Number(r.Monto_Adjudicado||0),0);
+  const _montoJusti    = S.monto; // presupuesto total justiprecio
+  const _pctOCReal     = _montoJusti>0?(_montoOCReal/_montoJusti*100):0;
+  // Monto en riesgo: Desierto + Pre-adjudicado (excluye Sin gestión)
+  const _montoRiesgo   = DATA_ANALISIS.filter(r=>r.Estado==='Desierto'||r.Estado==='Pre-adjudicado')
+                           .reduce((s,r)=>s+Number(r.Monto_Total||0),0);
+  const _pctRiesgo     = _montoJusti>0?(_montoRiesgo/_montoJusti*100):0;
+  const _nDesierto     = DATA_ANALISIS.filter(r=>r.Estado==='Desierto').length;
+  const _nPreAdj       = DATA_ANALISIS.filter(r=>r.Estado==='Pre-adjudicado').length;
+  const _montoDes      = DATA_ANALISIS.filter(r=>r.Estado==='Desierto')
+                           .reduce((s,r)=>s+Number(r.Monto_Total||0),0);
+  const _montoPreAdj   = DATA_ANALISIS.filter(r=>r.Estado==='Pre-adjudicado')
+                           .reduce((s,r)=>s+Number(r.Monto_Total||0),0);
+
   $('kpi-ejec').innerHTML=
-    kpiCard('g','Monto con OC',fmt(S.monto_oc),
-      S.pct_monto.toFixed(1)+'% del presupuesto',
-      'Suma del monto justiprecio de todos los ítems que tienen OC emitida (col P no vacía). Indica el valor monetario ya formalizado. <br><strong>Fórmula:</strong> Suma de Monto_Total donde Tiene_OC = SI.')+
-    kpiCard('r','Monto sin OC',fmt(S.monto_sin),
-      (100-S.pct_monto).toFixed(1)+'% pendiente',
-      'Monto justiprecio de ítems adjudicados pero sin OC emitida. Presupuesto comprometido pero no formalizado. <br><strong>Fórmula:</strong> Monto Total − Monto con OC.')+
+    kpiCard('','Monto total justiprecio',fmt(S.monto),
+      'Presupuesto estimado total',
+      'Suma del monto justiprecio (col Z) de todos los ítems del archivo. Es el valor <strong>estimado</strong> de referencia para el proceso licitatorio, no el costo real final. Sirve como base para calcular la ejecución.')+
+    kpiCard('g','Monto real adjudicado',fmt(_montoOCReal),
+      _pctOCReal.toFixed(1)+'% del presupuesto justiprecio · '+S.con_oc+' ítems con OC · '+(S.pct_adj>=0?'+':'')+S.pct_adj.toFixed(1)+'% vs estimado',
+      'Suma de la columna AA (Monto Total adjudicado s/Precio Proveedor) para todos los ítems con OC emitida. Representa el <strong>gasto real comprometido</strong> en órdenes de compra vigentes.<br>El porcentaje se calcula sobre el presupuesto justiprecio total.<br>Ejecución sobre justiprecio: <strong>'+S.pct_monto.toFixed(1)+'%</strong> (col Z con OC ÷ col Z total).<br>Variación vs estimado: <strong>'+(S.pct_adj>=0?'+':'')+S.pct_adj.toFixed(1)+'%</strong> ('+fmt(Math.abs(S.dif_adj))+(S.pct_adj>=0?' más caro':' más barato')+' que el justiprecio).',
+      _pctOCReal)+
     kpiCard('y','Ejecución monetaria',S.pct_monto.toFixed(1)+'%',
-      'Ponderado por valor económico',
-      'Porcentaje del presupuesto total ya formalizado en OC. <br><strong>Fórmula:</strong> Monto con OC ÷ Monto Total × 100. <br>Diferente al % por ítems ('+S.pct_items.toFixed(1)+'%): este indicador pondera cada renglón por su valor económico, no solo por cantidad de ítems.')+
-    kpiCard('p','Monto estimado desiertos',fmt(S.monto_des),
-      (S.monto_des/S.monto*100).toFixed(1)+'% en riesgo',
-      'Valor estimado de los renglones declarados desiertos. Presupuesto sin proveedor asignado que requiere re-licitación o compra directa para garantizar el abastecimiento.')+
-    kpiCard('g','Monto real adjudicado',
-      fmt(S.monto_adj),
-      fmt(S.monto_oc)+' estimado · '+(S.pct_adj>=0?'+':'')+S.pct_adj.toFixed(1)+'%',
-      'Monto total adjudicado según precio real del proveedor (col AA). Solo ítems con OC emitida. Variación de '+fmt(Math.abs(S.dif_adj))+' ('+(S.pct_adj>=0?'+':'')+S.pct_adj.toFixed(1)+'%) respecto al justiprecio estimado.')+
+      'Justiprecio · '+S.con_oc+' ítems con OC',
+      'Porcentaje del presupuesto justiprecio ya cubierto por ítems con OC. <br><strong>Fórmula:</strong> Monto Z con OC ÷ Monto Z total × 100. Sirve para comparar avance contra el presupuesto original.',
+      S.pct_monto)+
+    kpiCard('r','Monto en riesgo',fmt(_montoRiesgo),
+      _pctRiesgo.toFixed(1)+'% del presupuesto · '+_nDesierto+' desiertos + '+_nPreAdj+' pre-adj.',
+      'Suma del monto justiprecio de los ítems clasificados como <strong>Desierto</strong> ('+fmt(_montoDes)+') o <strong>Pre-adjudicado sin OC</strong> ('+fmt(_montoPreAdj)+'). Representa el presupuesto que aún no tiene compra asegurada. No incluye los ítems Sin gestión (proveedor vacío).',
+      _pctRiesgo)+
     kpiCard('b','Relicitados adjudicados',
       totalRelicitados.toLocaleString('es-AR'),
       'Insumos declarados desiertos que obtuvieron OC',
@@ -1323,12 +1612,14 @@ function buildEjecucion(){
       scales:{x:{...AXw,min:0,max:110,ticks:{...AXw.ticks,callback:v=>v+'%'}},y:{...AXn}}}});
 
   dc('ch-ejec-pie');
+  const _montoSinOC = S.monto - S.monto_oc;  // justiprecio sin OC
   CH['ch-ejec-pie']=new Chart($('ch-ejec-pie'),{type:'doughnut',
-    data:{labels:['Con OC','Sin OC'],
-      datasets:[{data:[S.monto_oc,S.monto_sin],
-        backgroundColor:['rgba(63,185,80,.85)','rgba(139,148,158,.45)'],borderColor:'#161b22',borderWidth:3}]},
+    data:{labels:['Con OC (real)','Desierto + Pre-adj.','Sin gestión'],
+      datasets:[{data:[_montoOCReal, _montoRiesgo, S.monto - _montoOCReal - _montoRiesgo],
+        backgroundColor:['rgba(63,185,80,.85)','rgba(248,81,73,.75)','rgba(139,148,158,.35)'],
+        borderColor:'#161b22',borderWidth:3}]},
     options:{responsive:true,maintainAspectRatio:false,cutout:'60%',
-      plugins:{legend:{labels:{color:'#fff'}},
+      plugins:{legend:{labels:{color:'#fff',font:{size:11}}},
                tooltip:{callbacks:{label:c=>`${fmt(c.raw)} (${(c.raw/S.monto*100).toFixed(1)}%)`}}}}});
 
   // Gráfico comparativo: Estimado (Monto_Total) vs Real (Monto_Adjudicado) por rubro — solo ítems con OC
@@ -1596,6 +1887,7 @@ function rRubroTabla(){
   const rows=DATA_ANALISIS.filter(r=>r.Rubro===_rubroActual&&(!fa||r.Clase_ABC_Monto===fa)&&(!fx||r.Clase_XYZ===fx)&&(!fo||r.Tiene_OC===fo)&&(!fd||r.Es_Desierto===fd))
     .sort((a,b)=>b.Monto_Total-a.Monto_Total);
   $('rubro-cnt').textContent=rows.length+' ítems';
+  setTimeout(()=>initSortable('t-rubro'), 50);
   document.querySelector('#t-rubro tbody').innerHTML=rows.map(r=>`<tr>
     <td style="max-width:210px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.Descripcion}">${r.Descripcion}</td>
     <td style="font-size:11px">${r.Proveedor||'—'}</td>
@@ -1838,6 +2130,7 @@ function buildAll(){
   buildHistorico();buildDatos();
   const rubros=[...new Set(DATA.map(r=>r.Rubro))].sort();
   $('fh-rubro').innerHTML='<option value="">Todos</option>'+rubros.map(r=>`<option>${r}</option>`).join('');
+  initAllSortable();
 }
 
 buildAll();
