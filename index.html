@@ -202,6 +202,7 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
   <div class="tab"     onclick="go('historico',this)">Histórico</div>
   <div class="tab"     onclick="go('stock',this)">📦 Stock</div>
   <div class="tab"     onclick="go('datos',this)">Datos</div>
+  <div class="tab"     onclick="go('oc',this)">📋 Seguimiento OC</div>
 </div>
 
 <!-- ALERTAS -->
@@ -588,6 +589,78 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
   </div>
 </div>
 
+<!-- SEGUIMIENTO OC -->
+<div class="page" id="pg-oc">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <select id="oc-year" onchange="buildOC()" style="background:var(--surf2);border:1px solid var(--bord);color:var(--tx);border-radius:7px;padding:5px 10px;font-size:12px">
+        <option value="">Todos los años</option>
+        <option value="2025">2025</option>
+        <option value="2026" selected>2026</option>
+      </select>
+      <select id="oc-servicio" onchange="buildOC()" style="background:var(--surf2);border:1px solid var(--bord);color:var(--tx);border-radius:7px;padding:5px 10px;font-size:12px">
+        <option value="">Todos los servicios</option>
+      </select>
+      <select id="oc-status" onchange="buildOC()" style="background:var(--surf2);border:1px solid var(--bord);color:var(--tx);border-radius:7px;padding:5px 10px;font-size:12px">
+        <option value="">Todos los estados</option>
+        <option value="PENDIENTE">Pendiente</option>
+        <option value="CUMPLIDO">Cumplido</option>
+        <option value="EXTERNO">Externo</option>
+      </select>
+      <input id="oc-buscar" type="text" placeholder="🔍 Buscar proveedor o artículo..." oninput="buildOC()"
+        style="background:var(--surf2);border:1px solid var(--bord);color:#fff;border-radius:7px;padding:5px 12px;font-size:12px;width:240px;outline:none">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span id="oc-update" style="font-size:11px;color:var(--muted2)"></span>
+      <button onclick="loadOC(true)" style="background:var(--surf2);border:1px solid var(--bord);color:var(--muted);border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer">↻ Actualizar</button>
+      <a href="https://docs.google.com/spreadsheets/d/1uuSVKmsvL7qUM12SG7cfSU6IGC5dUDaW42y1zv-a9rg/edit" target="_blank"
+        style="font-size:11px;color:var(--blue);text-decoration:none;padding:4px 10px;border:1px solid rgba(88,166,255,.3);border-radius:7px;background:rgba(88,166,255,.08)">
+        ↗ Abrir Sheet
+      </a>
+    </div>
+  </div>
+
+  <div id="oc-loading" style="text-align:center;padding:40px;color:var(--muted2);font-size:13px">
+    <div style="font-size:24px;margin-bottom:8px">⏳</div>Cargando datos del Sheet...
+  </div>
+
+  <div id="oc-content" style="display:none">
+    <div class="kpis" id="kpi-oc" style="margin-bottom:12px"></div>
+
+    <div class="g2" style="margin-bottom:12px">
+      <div class="card">
+        <div class="ctitle">Estado de OC</div>
+        <div style="height:220px;position:relative"><canvas id="ch-oc-status"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="ctitle">Monto por proveedor (top 8)</div>
+        <div style="height:220px;position:relative"><canvas id="ch-oc-prov"></canvas></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="ctitle" id="oc-table-title">Órdenes de compra</div>
+      <div class="tbl-count" id="oc-count"></div>
+      <div class="tbl-wrap" style="max-height:480px">
+        <table class="tbl" id="t-oc">
+          <thead><tr>
+            <th>N° OC</th><th>Año</th><th>Servicio</th><th>Proveedor</th>
+            <th>Artículo</th><th>Cantidad</th><th>Precio unit.</th><th>Monto</th>
+            <th>Vigencia</th><th>Status</th><th>Obs.</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div id="oc-error" style="display:none;text-align:center;padding:40px;color:var(--muted2)">
+    <div style="font-size:24px;margin-bottom:8px">⚠️</div>
+    <div id="oc-error-msg">No se pudo cargar el Sheet.</div>
+    <div style="font-size:11px;margin-top:8px">Verificá que el Sheet esté publicado como público.</div>
+  </div>
+</div>
+
 <!-- DATOS -->
 <div class="page" id="pg-datos">
   <div class="frow">
@@ -769,6 +842,163 @@ document.addEventListener('mouseout', e => {
   }
 });
 
+// ── Seguimiento OC desde Google Sheets ──────────────────────────────────────
+const OC_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSWaSa3Jca8vrzmWvgmrgG_PDyEESLDuBBMzlmGT0Q78uPi8SB2nn4rerp06Ea7Ip9OqM9mXN01G3eo/pub?output=csv';
+let _ocData = null;
+let _ocLoaded = false;
+
+function parsePrecio(s){
+  if(!s) return 0;
+  return parseFloat(String(s).replace(/[$\.]/g,'').replace(',','.')) || 0;
+}
+
+function parseFecha(s){
+  if(!s || s==='' ) return '';
+  const d = new Date(s);
+  if(isNaN(d)) return s;
+  return d.toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'});
+}
+
+async function loadOC(force){
+  if(_ocLoaded && !force) { buildOC(); return; }
+  $('oc-loading').style.display='block';
+  $('oc-content').style.display='none';
+  $('oc-error').style.display='none';
+
+  try {
+    const resp = await fetch(OC_URL + '&t=' + Date.now());
+    if(!resp.ok) throw new Error('HTTP ' + resp.status);
+    const text = await resp.text();
+    const lines = text.split('\n').filter(l=>l.trim());
+    const headers = lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
+
+    _ocData = lines.slice(1).map(line=>{
+      // Parsear CSV respetando comas dentro de comillas
+      const cols = [];
+      let cur='', inQ=false;
+      for(let i=0;i<line.length;i++){
+        if(line[i]==='"'){ inQ=!inQ; }
+        else if(line[i]===','&&!inQ){ cols.push(cur.trim()); cur=''; }
+        else { cur+=line[i]; }
+      }
+      cols.push(cur.trim());
+      const obj={};
+      headers.forEach((h,i)=>obj[h]=cols[i]||'');
+      return obj;
+    }).filter(r=>r['N°_OC']&&r['N°_OC']!=='0'&&r['ARTICULO']&&!r['ARTICULO'].includes('PRUEBA'));
+
+    // Poblar selector de servicios
+    const servicios=[...new Set(_ocData.map(r=>r['SERVICIO_SOLICITANTE']).filter(Boolean))].sort();
+    const selServ=$('oc-servicio');
+    selServ.innerHTML='<option value="">Todos los servicios</option>';
+    servicios.forEach(s=>{
+      const o=document.createElement('option');
+      o.value=s; o.textContent=s;
+      selServ.appendChild(o);
+    });
+
+    _ocLoaded=true;
+    $('oc-update').textContent='Actualizado: '+new Date().toLocaleTimeString('es-AR');
+    $('oc-loading').style.display='none';
+    $('oc-content').style.display='block';
+    buildOC();
+  } catch(e){
+    $('oc-loading').style.display='none';
+    $('oc-error').style.display='block';
+    $('oc-error-msg').textContent='Error: '+e.message;
+  }
+}
+
+function buildOC(){
+  if(!_ocData) return;
+  const year    = $('oc-year').value;
+  const serv    = $('oc-servicio').value;
+  const status  = $('oc-status').value;
+  const buscar  = ($('oc-buscar').value||'').toLowerCase();
+
+  let rows = _ocData.filter(r=>{
+    const pdo = (r['PDO_OC']||'').toString().trim();
+    if(year && pdo !== year) return false;
+    if(serv && r['SERVICIO_SOLICITANTE']!==serv) return false;
+    if(status && r['STATUS']!==status) return false;
+    if(buscar){
+      const hay = (r['RAZÓN SOCIAL']||'').toLowerCase().includes(buscar) ||
+                  (r['ARTICULO']||'').toLowerCase().includes(buscar) ||
+                  (r['N°_OC']||'').toLowerCase().includes(buscar);
+      if(!hay) return false;
+    }
+    return true;
+  });
+
+  // ── KPIs ──
+  const nOC   = new Set(rows.map(r=>r['N°_OC']+'_'+r['PDO_OC'])).size;
+  const nPend  = rows.filter(r=>r['STATUS']==='PENDIENTE').length;
+  const nCump  = rows.filter(r=>r['STATUS']==='CUMPLIDO').length;
+  const monto  = rows.reduce((s,r)=>s+parsePrecio(r['PRECIO'])*Number(r['CANTIDAD']||0),0);
+  const provs  = new Set(rows.map(r=>r['RAZÓN SOCIAL']).filter(Boolean)).size;
+
+  $('kpi-oc').innerHTML=
+    kpiCard('b',  'OC distintas',     nOC.toLocaleString('es-AR'),     rows.length+' renglones', 'Órdenes de compra únicas (N°+Año) en el filtro actual.')+
+    kpiCard('y',  'Pendientes',        nPend.toLocaleString('es-AR'),   (rows.length>0?(nPend/rows.length*100).toFixed(1):0)+'% de los renglones', 'Renglones con STATUS = PENDIENTE.', rows.length>0?nPend/rows.length*100:null)+
+    kpiCard('g',  'Cumplidos',         nCump.toLocaleString('es-AR'),   (rows.length>0?(nCump/rows.length*100).toFixed(1):0)+'% de los renglones', 'Renglones con STATUS = CUMPLIDO.', rows.length>0?nCump/rows.length*100:null)+
+    kpiCard('',   'Monto total',       fmt(monto),                      provs+' proveedores', 'Suma de Cantidad × Precio unitario de los renglones filtrados.')+
+    kpiCard('p',  'Proveedores',       provs.toLocaleString('es-AR'),   'Distintos en el filtro', 'Cantidad de razones sociales distintas en los renglones filtrados.');
+
+  // ── Gráfico status ──
+  const statusCounts = {'PENDIENTE':0,'CUMPLIDO':0,'EXTERNO':0};
+  rows.forEach(r=>{ if(statusCounts[r['STATUS']]!==undefined) statusCounts[r['STATUS']]++; });
+  dc('ch-oc-status');
+  CH['ch-oc-status']=new Chart($('ch-oc-status'),{type:'doughnut',
+    data:{labels:['Pendiente','Cumplido','Externo'],
+      datasets:[{data:[statusCounts.PENDIENTE,statusCounts.CUMPLIDO,statusCounts.EXTERNO],
+        backgroundColor:['rgba(227,179,65,.85)','rgba(63,185,80,.85)','rgba(139,148,158,.55)'],
+        borderColor:'#161b22',borderWidth:3}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'55%',
+      plugins:{legend:{labels:{color:'#fff',font:{size:11}}},
+               tooltip:{callbacks:{label:c=>`${c.label}: ${c.raw} (${rows.length>0?(c.raw/rows.length*100).toFixed(1):0}%)`}}}}
+  });
+
+  // ── Gráfico monto por proveedor (top 8) ──
+  const pm={};
+  rows.forEach(r=>{
+    const p=r['RAZÓN SOCIAL']||'(sin proveedor)';
+    pm[p]=(pm[p]||0)+parsePrecio(r['PRECIO'])*Number(r['CANTIDAD']||0);
+  });
+  const top8=Object.entries(pm).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  dc('ch-oc-prov');
+  CH['ch-oc-prov']=new Chart($('ch-oc-prov'),{type:'bar',
+    data:{labels:top8.map(p=>p[0].length>20?p[0].substring(0,19)+'…':p[0]),
+      datasets:[{data:top8.map(p=>p[1]),
+        backgroundColor:'rgba(88,166,255,.75)',borderRadius:3}]},
+    options:{indexAxis:'y',responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>fmt(c.raw)}}},
+      scales:{x:{...AXw,ticks:{...AXw.ticks,callback:v=>fmt(v)}},y:{...AXn,ticks:{...AXn.ticks,font:{size:10}}}}}
+  });
+
+  // ── Tabla ──
+  $('oc-count').textContent=rows.length.toLocaleString('es-AR')+' renglones';
+  const statusColor={PENDIENTE:'var(--yel)',CUMPLIDO:'var(--green)',EXTERNO:'var(--muted)'};
+  const statusBg={PENDIENTE:'rgba(227,179,65,.15)',CUMPLIDO:'rgba(63,185,80,.15)',EXTERNO:'rgba(139,148,158,.1)'};
+  document.querySelector('#t-oc tbody').innerHTML=rows.map(r=>{
+    const monto_r=parsePrecio(r['PRECIO'])*Number(r['CANTIDAD']||0);
+    const st=r['STATUS']||'';
+    return `<tr>
+      <td style="font-weight:600;color:var(--blue)">${r['N°_OC']}</td>
+      <td style="color:var(--muted)">${r['PDO_OC']}</td>
+      <td style="font-size:11px;color:var(--muted)">${r['SERVICIO_SOLICITANTE']||''}</td>
+      <td style="font-size:11px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r['RAZÓN SOCIAL']}">${r['RAZÓN SOCIAL']||''}</td>
+      <td style="font-size:11px;max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r['ARTICULO']}">${(r['ARTICULO']||'').split(',')[0]}</td>
+      <td class="mono" style="text-align:right">${r['CANTIDAD']||'—'}</td>
+      <td class="mono" style="text-align:right">${fmt(parsePrecio(r['PRECIO']))}</td>
+      <td class="mono" style="text-align:right;color:var(--green)">${fmt(monto_r)}</td>
+      <td style="font-size:10px;color:var(--muted2);white-space:nowrap">${parseFecha(r['DESDE'])} – ${parseFecha(r['HASTA'])}</td>
+      <td><span style="font-size:10px;font-weight:600;padding:2px 8px;border-radius:999px;background:${statusBg[st]||'transparent'};color:${statusColor[st]||'var(--muted)'}">${st}</span></td>
+      <td style="font-size:10px;color:var(--muted2);max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r['OBSERVACIONES']}">${r['OBSERVACIONES']||''}</td>
+    </tr>`;
+  }).join('');
+  setTimeout(()=>initSortable('t-oc'),50);
+}
+
 // Botón volver arriba
 window.addEventListener('scroll', () => {
   const btn = document.getElementById('btn-top');
@@ -861,6 +1091,7 @@ $('ts').textContent = '· Datos al '+bd;
 $('data-date').textContent = bd;
 
 function go(id,el){
+  if(id==='oc' && !_ocLoaded) { setTimeout(loadOC, 100); }
   qq('.tab').forEach(t=>t.classList.remove('on'));
   qq('.page').forEach(p=>p.classList.remove('on'));
   el.classList.add('on');
