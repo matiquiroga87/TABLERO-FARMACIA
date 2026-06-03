@@ -1003,10 +1003,10 @@ function buildPrioridades(){
   const nOk   = items.filter(i=>i.urgScore===1).length;
 
   $('kpi-prior').innerHTML =
-    kpiCard('r','Críticos', nCrit, 'Stock bajo mínimo Y < 1 mes', null)+
-    kpiCard('o','Urgentes', nUrg,  'Stock bajo mínimo O < 1 mes', null)+
-    kpiCard('y','Moderados', nMod, '1 a 3 meses de cobertura', null)+
-    kpiCard('g','Con stock OK', nOk, '> 3 meses de cobertura', null);
+    kpiCard('r','Críticos', nCrit, '< mínimo Y < 1 mes', null)+
+    kpiCard('o','Urgentes', nUrg,  '< mínimo O < 1 mes', null)+
+    kpiCard('y','Moderados', nMod, '≥ 1 y < 3 meses', null)+
+    kpiCard('g','Con stock OK', nOk, '≥ 3 meses', null);
 
   if(!items.length){
     $('tbody-prior').innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--muted2);padding:20px">No se encontraron medicamentos de control con OC pendiente</td></tr>';
