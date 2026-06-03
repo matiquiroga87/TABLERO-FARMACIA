@@ -346,7 +346,30 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
     <div id="stock-sugerencias" style="background:var(--surf2);border:1px solid var(--bord);border-radius:7px;margin-top:4px;max-width:600px;display:none;max-height:200px;overflow-y:auto"></div>
   </div>
 
-  <!-- Resultado de la búsqueda -->
+
+    <!-- Carga masiva -->
+    <div class="card">
+      <div class="ctitle">Carga masiva de stock</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">
+        Podés cargar un CSV con dos columnas: <code style="background:var(--surf2);padding:1px 6px;border-radius:4px;font-family:'DM Mono',monospace">Codigo,Stock</code> para calcular la cobertura de múltiples ítems a la vez.
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
+        <button onclick="$('stock-csv-inp').click()" style="background:var(--blue);color:#0d1117;border:none;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">↑ Cargar CSV de stock</button>
+        <button onclick="descargarPlantillaStock()" style="background:var(--surf2);color:#fff;border:1px solid var(--bord);border-radius:7px;padding:8px 14px;font-size:13px;cursor:pointer">⬇ Descargar plantilla</button>
+        <input type="file" id="stock-csv-inp" accept=".csv" style="display:none" onchange="cargarCSVStock(event)">
+      </div>
+      <div id="stock-masivo-result" style="display:none">
+        <div class="kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:10px" id="kpi-stock-masivo"></div>
+        <div class="tbl-wrap" style="max-height:420px">
+          <table class="tbl" id="t-stock-masivo">
+            <thead><tr><th>Descripción</th><th>Rubro</th><th>ABC</th><th>Stock cargado</th><th>Consumo mensual</th><th>Cobertura</th><th>Estado</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Resultado de la búsqueda -->
   <div id="stock-resultado" style="display:none">
     <div class="card" style="margin-bottom:14px;border:1px solid var(--blue)">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap">
@@ -379,27 +402,7 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
       </div>
     </div>
 
-    <!-- Carga masiva -->
-    <div class="card">
-      <div class="ctitle">Carga masiva de stock</div>
-      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">
-        Podés cargar un CSV con dos columnas: <code style="background:var(--surf2);padding:1px 6px;border-radius:4px;font-family:'DM Mono',monospace">Codigo,Stock</code> para calcular la cobertura de múltiples ítems a la vez.
-      </div>
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
-        <button onclick="$('stock-csv-inp').click()" style="background:var(--blue);color:#0d1117;border:none;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">↑ Cargar CSV de stock</button>
-        <button onclick="descargarPlantillaStock()" style="background:var(--surf2);color:#fff;border:1px solid var(--bord);border-radius:7px;padding:8px 14px;font-size:13px;cursor:pointer">⬇ Descargar plantilla</button>
-        <input type="file" id="stock-csv-inp" accept=".csv" style="display:none" onchange="cargarCSVStock(event)">
-      </div>
-      <div id="stock-masivo-result" style="display:none">
-        <div class="kpis" style="grid-template-columns:repeat(4,1fr);margin-bottom:10px" id="kpi-stock-masivo"></div>
-        <div class="tbl-wrap" style="max-height:420px">
-          <table class="tbl" id="t-stock-masivo">
-            <thead><tr><th>Descripción</th><th>Rubro</th><th>ABC</th><th>Stock cargado</th><th>Consumo mensual</th><th>Cobertura</th><th>Estado</th></tr></thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
+
   </div>
 
   <!-- Estado vacío -->
