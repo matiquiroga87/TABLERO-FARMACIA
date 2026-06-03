@@ -606,6 +606,7 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
     <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
       <select id="oc-year" onchange="buildOC()" style="background:var(--surf2);border:1px solid var(--bord);color:var(--tx);border-radius:7px;padding:5px 10px;font-size:12px">
         <option value="">Todos los años</option>
+        <option value="2024">2024</option>
         <option value="2025">2025</option>
         <option value="2026" selected>2026</option>
       </select>
@@ -616,7 +617,7 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
         <option value="">Todos los estados</option>
         <option value="PENDIENTE">Pendiente</option>
         <option value="CUMPLIDO">Cumplido</option>
-        <option value="EXTERNO">Externo</option>
+        <option value="DESAFECTADO">Desafectado</option>
       </select>
       <input id="oc-buscar" type="text" placeholder="🔍 Buscar proveedor o artículo..." oninput="buildOC()"
         style="background:var(--surf2);border:1px solid var(--bord);color:#fff;border-radius:7px;padding:5px 12px;font-size:12px;width:240px;outline:none">
@@ -892,7 +893,15 @@ const CONTROL_LIST = [{"Codigo": "M1804111", "Nombre": "ANFOTERICINA B FRASCO AM
 const CONTROL_IDX = {};
 CONTROL_LIST.forEach(c => { CONTROL_IDX[c.Codigo] = c; });
 
-const OC_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSWaSa3Jca8vrzmWvgmrgG_PDyEESLDuBBMzlmGT0Q78uPi8SB2nn4rerp06Ea7Ip9OqM9mXN01G3eo/pub?output=csv';
+const OC_BASE = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSWaSa3Jca8vrzmWvgmrgG_PDyEESLDuBBMzlmGT0Q78uPi8SB2nn4rerp06Ea7Ip9OqM9mXN01G3eo/pub?output=csv';
+// Para múltiples hojas agregar: &gid=XXXXXXXX
+// GID por año (completar con los GIDs reales del Sheet):
+const OC_URLS_POR_ANIO = {
+  '2026': OC_BASE,
+  '2025': OC_BASE + '&gid=1730742819',
+  '2024': OC_BASE + '&gid=219043850',
+};
+const OC_URL = OC_BASE;
 let _ocData = null;
 let _ocLoaded = false;
 
@@ -901,11 +910,53 @@ function parsePrecio(s){
   return parseFloat(String(s).replace(/[$\.]/g,'').replace(',','.')) || 0;
 }
 
+function parseCantidad(s){
+  if(!s) return 0;
+  const str = String(s).trim();
+  // Si es fórmula (empieza con =), tomar el primer número
+  if(str.startsWith('=')){
+    const m = str.match(/=(\d+)/);
+    return m ? parseInt(m[1]) : 0;
+  }
+  return parseInt(str.replace(/[^\d]/g,'')) || 0;
+}
+
 function parseFecha(s){
   if(!s || s==='' ) return '';
+  // Parsear sin conversión de timezone: tomar la fecha literal del string
+  const m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return `${m[3]}/${m[2]}/${m[1]}`;
   const d = new Date(s);
   if(isNaN(d)) return s;
   return d.toLocaleDateString('es-AR', {day:'2-digit',month:'2-digit',year:'numeric'});
+}
+
+function parseCSVSheet(text){
+  const lines = text.split('\n').filter(l=>l.trim());
+  if(lines.length < 2) return [];
+  const headers = lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
+  const SERVICIOS_PROPIOS = new Set(['FARMACIA','ESTERILIZACION','FARMACIA ','ESTERILIZACION ']);
+  return lines.slice(1).map(line=>{
+    const cols = [];
+    let cur='', inQ=false;
+    for(let i=0;i<line.length;i++){
+      if(line[i]==='"'){ inQ=!inQ; }
+      else if(line[i]===','&&!inQ){ cols.push(cur.trim()); cur=''; }
+      else { cur+=line[i]; }
+    }
+    cols.push(cur.trim());
+    const obj={};
+    headers.forEach((h,i)=>obj[h]=cols[i]||'');
+    return obj;
+  }).filter(r=>{
+    if(!r['N°_OC']||r['N°_OC']==='0') return false;
+    if(!r['ARTICULO']||r['ARTICULO'].includes('PRUEBA')) return false;
+    const serv = (r['SERVICIO_SOLICITANTE']||'').trim().toUpperCase();
+    if(SERVICIOS_PROPIOS.has(serv)) return true;
+    const solic = (r['N°_SOLIC']||'').toString().trim();
+    if(solic && SOLS_ADQUISICIONES.has(solic)) return true;
+    return false;
+  });
 }
 
 async function loadOC(force){
@@ -915,37 +966,28 @@ async function loadOC(force){
   $('oc-error').style.display='none';
 
   try {
-    const resp = await fetch(OC_URL + '&t=' + Date.now());
-    if(!resp.ok) throw new Error('HTTP ' + resp.status);
-    const text = await resp.text();
-    const lines = text.split('\n').filter(l=>l.trim());
-    const headers = lines[0].split(',').map(h=>h.replace(/"/g,'').trim());
+    // Cargar todas las hojas en paralelo
+    const anios = Object.keys(OC_URLS_POR_ANIO);
+    const results = await Promise.allSettled(
+      anios.map(a => fetch(OC_URLS_POR_ANIO[a] + '&t=' + Date.now()).then(r=>r.text()))
+    );
 
-    const SERVICIOS_PROPIOS = new Set(['FARMACIA','ESTERILIZACION','FARMACIA ','ESTERILIZACION ']);
-
-    _ocData = lines.slice(1).map(line=>{
-      // Parsear CSV respetando comas dentro de comillas
-      const cols = [];
-      let cur='', inQ=false;
-      for(let i=0;i<line.length;i++){
-        if(line[i]==='"'){ inQ=!inQ; }
-        else if(line[i]===','&&!inQ){ cols.push(cur.trim()); cur=''; }
-        else { cur+=line[i]; }
+    _ocData = [];
+    results.forEach((res, i) => {
+      if(res.status === 'fulfilled'){
+        const rows = parseCSVSheet(res.value);
+        // Agregar el año al registro por si no está en PDO_OC
+        rows.forEach(r => { if(!r['PDO_OC']||r['PDO_OC']==='') r['PDO_OC'] = anios[i]; });
+        _ocData.push(...rows);
       }
-      cols.push(cur.trim());
-      const obj={};
-      headers.forEach((h,i)=>obj[h]=cols[i]||'');
-      return obj;
-    }).filter(r=>{
-      if(!r['N°_OC']||r['N°_OC']==='0') return false;
-      if(!r['ARTICULO']||r['ARTICULO'].includes('PRUEBA')) return false;
-      // Incluir si el servicio es Farmacia o Esterilización
-      const serv = (r['SERVICIO_SOLICITANTE']||'').trim().toUpperCase();
-      if(SERVICIOS_PROPIOS.has(serv)) return true;
-      // O si la solicitud coincide con el archivo de adquisiciones
-      const solic = (r['N°_SOLIC']||'').toString().trim();
-      if(solic && SOLS_ADQUISICIONES.has(solic)) return true;
-      return false;
+    });
+
+    // Deduplicar por N°_OC + PDO_OC + RENGLÓN para evitar duplicados entre hojas
+    const seen = new Set();
+    _ocData = _ocData.filter(r => {
+      const k = `${r['N°_OC']}_${r['PDO_OC']}_${r['RENGLÓN']||r['RENGLON']||''}`;
+      if(seen.has(k)) return false;
+      seen.add(k); return true;
     });
 
     // Poblar selector de servicios
@@ -974,21 +1016,49 @@ function buildPrioridades(){
   if(!_ocData){ $('tbody-prior').innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--muted2);padding:20px">Cargá el Sheet primero para ver las prioridades</td></tr>'; return; }
 
   // Filtrar OC pendientes del Sheet
-  const ocPend = _ocData.filter(r => r['STATUS']==='PENDIENTE');
+  // Para prioridades: OC pendientes de año actual y anterior únicamente
+  const anioActual = new Date().getFullYear().toString();
+  const anioAnterior = (new Date().getFullYear()-1).toString();
+  const ocPend = _ocData.filter(r =>
+    r['STATUS']==='PENDIENTE' &&
+    (r['PDO_OC']===anioActual || r['PDO_OC']===anioAnterior)
+  );
 
   // Cruzar con listado de control
   const items = [];
-  CONTROL_LIST.forEach(ctrl => {
+  // Clase A del archivo de adquisiciones (deduplicados por código)
+  const claseASet = new Set();
+  const claseAItems = {};
+  DATA_ANALISIS.filter(r=>r.Clase_ABC_Monto==='A').forEach(r=>{
+    if(!claseASet.has(r.Codigo)){
+      claseASet.add(r.Codigo);
+      claseAItems[r.Codigo] = r;
+    }
+  });
+
+  // Construir lista combinada: control + clase A (sin duplicar)
+  const codigosControl = new Set(CONTROL_LIST.map(c=>c.Codigo));
+  const listaCompleta = [...CONTROL_LIST];
+  // Agregar clase A que no están ya en el listado de control
+  Object.keys(claseAItems).forEach(cod => {
+    if(!codigosControl.has(cod)){
+      listaCompleta.push({ Codigo:cod, Nombre: claseAItems[cod].Descripcion, StockMin:0, StockDep:null, _esClaseA:true });
+    }
+  });
+
+  listaCompleta.forEach(ctrl => {
     // Buscar en DATA (adquisiciones) para obtener ABC/XYZ y consumo
     const dataItem = DATA_ANALISIS.find(r =>
       r.Codigo === ctrl.Codigo && r.Tiene_OC === 'SI'
     );
-    // Buscar OC pendiente para este código
+    // Buscar OC pendiente para este código (Sheet + año anterior)
     const ocItem = ocPend.find(r =>
       r['CÓDIGO'] === ctrl.Codigo || r['CODIGO'] === ctrl.Codigo
     );
-    // Solo incluir si tiene OC pendiente en el Sheet
+    // Solo incluir si tiene OC pendiente
     if(!ocItem) return;
+    // Para clase A sin stock registrado, StockDep = null → meses = null
+    if(ctrl.StockDep === null) ctrl.StockDep = 0;
 
     const cons    = dataItem ? Number(dataItem.Consumo_Mensual||0) : 0;
     const meses   = cons > 0 ? ctrl.StockDep / cons : null;  // stock=0 → meses=0 (cobertura cero)
@@ -1095,7 +1165,7 @@ function buildOC(){
   const nOC   = new Set(rows.map(r=>r['N°_OC']+'_'+r['PDO_OC'])).size;
   const nPend  = rows.filter(r=>r['STATUS']==='PENDIENTE').length;
   const nCump  = rows.filter(r=>r['STATUS']==='CUMPLIDO').length;
-  const monto  = rows.reduce((s,r)=>s+parsePrecio(r['PRECIO'])*Number(r['CANTIDAD']||0),0);
+  const monto  = rows.reduce((s,r)=>s+parsePrecio(r['PRECIO'])*parseCantidad(r['CANTIDAD']),0);
   const provs  = new Set(rows.map(r=>r['RAZÓN SOCIAL']).filter(Boolean)).size;
 
   $('kpi-oc').innerHTML=
@@ -1141,7 +1211,7 @@ function buildOC(){
   const statusColor={PENDIENTE:'var(--yel)',CUMPLIDO:'var(--green)',EXTERNO:'var(--muted)'};
   const statusBg={PENDIENTE:'rgba(227,179,65,.15)',CUMPLIDO:'rgba(63,185,80,.15)',EXTERNO:'rgba(139,148,158,.1)'};
   document.querySelector('#t-oc tbody').innerHTML=rows.map(r=>{
-    const monto_r=parsePrecio(r['PRECIO'])*Number(r['CANTIDAD']||0);
+    const monto_r=parsePrecio(r['PRECIO'])*parseCantidad(r['CANTIDAD']);
     const st=r['STATUS']||'';
     return `<tr>
       <td style="font-weight:600;color:var(--blue)">${r['N°_OC']}</td>
@@ -2115,7 +2185,7 @@ function buildEjecucion(){
     kpiCard('c','Órdenes de compra',
       (() => new Set(DATA_ANALISIS.filter(r=>r.OC&&r.OC.trim()!=='').map(r=>r.OC.trim())).size)().toLocaleString('es-AR'),
       'Números de OC distintos en el archivo',
-      'Cantidad de números de Orden de Compra únicos registrados en la col P. Un número de OC puede cubrir múltiples renglones o ítems del mismo proceso licitatorio.')+
+      'Cantidad de números de Orden de Compra únicos del período seleccionado. Se incluyeron solo OC de FARMACIA y ESTERILIZACIÓN, o cuya solicitud figura en el archivo de adquisiciones. Se excluyeron OC de otros servicios sin coincidencia de solicitud.')+
     kpiCard('b','Relicitados adjudicados',
       totalRelicitados.toLocaleString('es-AR'),
       'Insumos declarados desiertos que obtuvieron OC',
