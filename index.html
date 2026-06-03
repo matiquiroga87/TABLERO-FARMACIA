@@ -330,9 +330,12 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
 <!-- STOCK -->
 <div class="page" id="pg-stock">
   <div style="background:var(--surf);border:1px solid var(--bord);border-radius:10px;padding:1.25rem;margin-bottom:14px">
-    <div style="font-size:15px;font-weight:600;color:#fff;margin-bottom:8px">Calculadora de cobertura de stock</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+      <div style="font-size:15px;font-weight:600;color:#fff">Calculadora de cobertura de stock</div>
+      <span id="stock-sys-info" style="font-size:11px;color:var(--green);display:none">✓ Stock del sistema cargado</span>
+    </div>
     <div style="font-size:13px;color:var(--muted);margin-bottom:1rem;line-height:1.6">
-      Ingresá el stock actual de un medicamento para calcular cuántos meses de cobertura tenés, usando el consumo mensual del archivo de solicitudes como referencia.
+      Ingresá el stock actual de un medicamento para calcular cuántos meses de cobertura tenés. Si cargás el XLS del sistema en el panel de abajo, el stock se completa automáticamente al seleccionar un medicamento.
     </div>
     <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end;max-width:600px">
       <div>
@@ -351,10 +354,15 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
     <div class="card">
       <div class="ctitle">Carga masiva de stock</div>
       <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">
-        Podés cargar un CSV con dos columnas: <code style="background:var(--surf2);padding:1px 6px;border-radius:4px;font-family:'DM Mono',monospace">Codigo,Stock</code> para calcular la cobertura de múltiples ítems a la vez.
+        Cargá el archivo XLS del sistema hospitalario para calcular la cobertura de todos los ítems del depósito, o usá un CSV propio con columnas <code style="background:var(--surf2);padding:1px 6px;border-radius:4px;font-family:'DM Mono',monospace">Codigo,Stock</code>.
       </div>
-      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px">
-        <button onclick="$('stock-csv-inp').click()" style="background:var(--blue);color:#0d1117;border:none;border-radius:7px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">↑ Cargar CSV de stock</button>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+        <button onclick="$('stock-xls-mas-inp').click()"
+          style="background:rgba(63,185,80,.15);border:1px solid rgba(63,185,80,.4);color:var(--green);border-radius:7px;padding:8px 16px;font-size:13px;font-weight:600;cursor:pointer">
+          📂 Cargar XLS del sistema
+        </button>
+        <input type="file" id="stock-xls-mas-inp" accept=".xls,.xlsx,.html,.htm" style="display:none" onchange="cargarXLSMasivo(event)">
+        <button onclick="$('stock-csv-inp').click()" style="background:var(--surf2);color:var(--muted);border:1px solid var(--bord);border-radius:7px;padding:8px 14px;font-size:13px;cursor:pointer">↑ Cargar CSV propio</button>
         <button onclick="descargarPlantillaStock()" style="background:var(--surf2);color:#fff;border:1px solid var(--bord);border-radius:7px;padding:8px 14px;font-size:13px;cursor:pointer">⬇ Descargar plantilla</button>
         <input type="file" id="stock-csv-inp" accept=".csv" style="display:none" onchange="cargarCSVStock(event)">
       </div>
@@ -1001,6 +1009,128 @@ function buildOC(){
   }).join('');
   setTimeout(()=>initSortable('t-oc'),50);
 }
+
+// ── Carga de stock desde archivo XLS del sistema ────────────────────────────
+let _stockSistema = {}; // { codigo: stock }
+
+function cargarXLSMasivo(event){
+  // Carga el XLS del sistema y ejecuta el análisis masivo automáticamente
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const text = e.target.result;
+      _stockSistema = {};
+      const rows_data = [];
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(text, 'text/html');
+      const rows = doc.querySelectorAll('tbody tr');
+
+      rows.forEach(tr => {
+        const tds = tr.querySelectorAll('td');
+        if(tds.length < 4) return;
+        const sector = tds[0].textContent.trim();
+        const codigo = tds[1].textContent.trim();
+        const desc   = tds[2].textContent.trim();
+        const stock  = parseInt(tds[3].textContent.trim()) || 0;
+        if(sector === 'DEPOSITO FARMACIA'){
+          _stockSistema[codigo] = stock;
+          _stockSistema['__desc__' + desc.toUpperCase()] = stock;
+          rows_data.push({ Codigo: codigo, Stock: stock });
+        }
+      });
+
+      if(rows_data.length === 0){
+        alert('No se encontraron datos de DEPOSITO FARMACIA en el archivo.');
+        return;
+      }
+
+      $('stock-sys-info').style.display = 'inline';
+      $('stock-sys-info').textContent = '✓ Stock del sistema cargado (' + rows_data.length + ' ítems)';
+
+      // Ejecutar análisis masivo automáticamente
+      procesarStockMasivo(rows_data);
+    } catch(err){
+      alert('Error al procesar el archivo: ' + err.message);
+    }
+    event.target.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function cargarStockSistema(event){
+  const file = event.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const text = e.target.result;
+      _stockSistema = {};
+      let count = 0;
+
+      // Parsear HTML: buscar filas de tabla con 4 columnas
+      // Columnas: Sector | Código | Descripción | Stock
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(text, 'text/html');
+      const rows = doc.querySelectorAll('tbody tr');
+
+      rows.forEach(tr => {
+        const tds = tr.querySelectorAll('td');
+        if(tds.length < 4) return;
+        const sector = tds[0].textContent.trim();
+        const codigo = tds[1].textContent.trim();
+        const stock  = parseInt(tds[3].textContent.trim()) || 0;
+        // Tomar solo DEPOSITO FARMACIA como fuente principal
+        // Si el código ya existe, sumar (por si hay múltiples sectores)
+        if(sector === 'DEPOSITO FARMACIA'){
+          _stockSistema[codigo] = stock;
+          count++;
+        }
+      });
+
+      // También indexar por descripción normalizada como fallback
+      rows.forEach(tr => {
+        const tds = tr.querySelectorAll('td');
+        if(tds.length < 4) return;
+        const sector = tds[0].textContent.trim();
+        const codigo = tds[1].textContent.trim();
+        const desc   = tds[2].textContent.trim().toUpperCase();
+        const stock  = parseInt(tds[3].textContent.trim()) || 0;
+        if(sector === 'DEPOSITO FARMACIA'){
+          _stockSistema['__desc__' + desc] = stock;
+        }
+      });
+
+      if(count === 0){
+        alert('No se encontraron datos de DEPOSITO FARMACIA en el archivo. Verificá que sea el archivo correcto.');
+        return;
+      }
+
+      $('stock-sys-info').style.display = 'inline';
+      $('stock-sys-info').textContent = '✓ Stock del sistema cargado (' + count + ' ítems · DEPOSITO FARMACIA)';
+      
+      // Si hay un medicamento ya seleccionado, actualizar el stock automáticamente
+      if(_stockSeleccionado){
+        const cod = (_stockSeleccionado.Codigo||'').trim();
+        if(_stockSistema[cod] !== undefined){
+          $('stk-input').value = _stockSistema[cod];
+          calcularCobertura();
+          $('stock-sys-info').textContent += ' · Stock aplicado automáticamente';
+        }
+      }
+    } catch(err){
+      alert('Error al procesar el archivo: ' + err.message);
+    }
+    // Limpiar el input para permitir cargar el mismo archivo nuevamente
+    event.target.value = '';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// Parchar buscarMedStock para que al seleccionar un medicamento,
+// si hay stock del sistema cargado, lo aplique automáticamente
+const _origVerMed = window.verMedStock;
 
 // Botón volver arriba
 window.addEventListener('scroll', () => {
@@ -2240,6 +2370,14 @@ function seleccionarMed(codigo,rubro){
   const item=DATA.find(r=>r.Codigo===codigo&&r.Rubro===rubro)||DATA.find(r=>r.Codigo===codigo);
   if(!item)return;
   _stkItem=item;
+  // Si hay stock del sistema cargado, aplicarlo automáticamente
+  if(Object.keys(_stockSistema).length > 0){
+    const _cod = (item.Codigo||'').trim();
+    const _desc = (item.Descripcion||'').trim().toUpperCase();
+    const _sv = _stockSistema[_cod]!==undefined ? _stockSistema[_cod]
+               : (_stockSistema['__desc__'+_desc]!==undefined ? _stockSistema['__desc__'+_desc] : null);
+    if(_sv !== null){ setTimeout(()=>{ $('stk-input').value=_sv; calcularCobertura(); },80); }
+  }
   $('stock-sugerencias').style.display='none';
   $('stock-search').value=item.Descripcion;
   $('stk-nombre').textContent=item.Descripcion;
@@ -2294,6 +2432,28 @@ function descargarPlantillaStock(){
   const blob=new Blob([header+rows+'\n... (completar con stock real)'],{type:'text/csv'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='plantilla_stock.csv';a.click();
 }
+function procesarStockMasivo(rows_data){
+  // rows_data = [{Codigo, Stock}, ...]
+  const stockMap = {};
+  rows_data.forEach(r => { if(r.Codigo) stockMap[r.Codigo.trim()] = Number(r.Stock||0); });
+  const results = [];
+  DATA.forEach(r => {
+    if(stockMap[r.Codigo] !== undefined){
+      const stk  = stockMap[r.Codigo];
+      const cons = Number(r.Consumo_Mensual||0);
+      const meses = cons > 0 ? stk/cons : null;
+      results.push({...r, _stock:stk,
+        _meses: meses, _cons: cons,
+        _color: meses===null?'var(--muted)':meses<1?'var(--red)':meses<3?'var(--yel)':'var(--green)'});
+    }
+  });
+  if(!results.length){
+    alert('No se encontraron coincidencias de códigos vademecum en el archivo del sistema.');
+    return;
+  }
+  mostrarStockMasivo(results);
+}
+
 function cargarCSVStock(e){
   const file=e.target.files[0];if(!file)return;
   const reader=new FileReader();
