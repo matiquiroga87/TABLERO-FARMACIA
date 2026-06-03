@@ -649,6 +649,29 @@ footer{text-align:center;padding:1.5rem;font-size:12px;color:var(--muted2);borde
       </div>
     </div>
 
+    <!-- Tabla de prioridades -->
+    <div class="card" style="margin-bottom:12px;border-left:3px solid var(--red)">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+        <div>
+          <div class="ctitle" style="margin-bottom:2px">🎯 Tabla de prioridades — medicamentos de control con OC pendiente</div>
+          <div style="font-size:11px;color:var(--muted2)">Cruza el listado de control con OC pendientes del Sheet · Ordenado por urgencia + clasificación ABC</div>
+        </div>
+        <button onclick="buildPrioridades()" style="background:rgba(248,81,73,.12);border:1px solid rgba(248,81,73,.3);color:var(--red);border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer">↻ Recalcular</button>
+      </div>
+      <div class="kpis" id="kpi-prior" style="margin-bottom:10px"></div>
+      <div class="tbl-wrap" style="max-height:420px">
+        <table class="tbl" id="t-prior">
+          <thead><tr>
+            <th>Prioridad</th><th>Medicamento</th><th>ABC</th><th>XYZ</th>
+            <th>N° OC</th><th>Proveedor</th>
+            <th>Stock dep.</th><th>Stock mín.</th><th>Cobertura</th>
+            <th>Cantidad OC</th><th>Vigencia hasta</th>
+          </tr></thead>
+          <tbody id="tbody-prior"><tr><td colspan="11" style="text-align:center;color:var(--muted2);padding:20px">Cargá el Sheet para ver las prioridades</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="card">
       <div class="ctitle" id="oc-table-title">Órdenes de compra</div>
       <div class="tbl-count" id="oc-count"></div>
@@ -854,6 +877,12 @@ document.addEventListener('mouseout', e => {
 });
 
 // ── Seguimiento OC desde Google Sheets ──────────────────────────────────────
+// ── Listado de medicamentos de control (actualizado 69 ítems) ────────
+const CONTROL_LIST = [{"Codigo": "M1804111", "Nombre": "ANFOTERICINA B FRASCO AMPOLLA INYECTABLE 50 MG", "StockMin": 30, "StockDep": 220}, {"Codigo": "M4104111", "Nombre": "ADRENALINA CLORHIDRATO INYECTABLE 1MG", "StockMin": 300, "StockDep": 2900}, {"Codigo": "M0720113", "Nombre": "AMPICILINA - SULBACTAM 1,5 GR FA", "StockMin": 1900, "StockDep": 8600}, {"Codigo": "M1801033", "Nombre": "ANFOTERICINA B COMPLEJO LIPIDICO 100MG-20ML", "StockMin": 0, "StockDep": 0}, {"Codigo": "M1801008", "Nombre": "ANFOTERICINA LIPOSOMAL 50 MG FA", "StockMin": 180, "StockDep": 30}, {"Codigo": "M1805120", "Nombre": "ANIDULAFUNGINA 100 MG FA", "StockMin": 0, "StockDep": 30}, {"Codigo": "M4116123", "Nombre": "ATRACURIUM AMPOLLAS 50MG-5ML", "StockMin": 1500, "StockDep": 4350}, {"Codigo": "M0701127", "Nombre": "AZTREONAM 1 GR FA", "StockMin": 200, "StockDep": 1075}, {"Codigo": "M4101048", "Nombre": "BROMURO DE PANCURONIO AMPOLLAS 2MG/2ML", "StockMin": 100, "StockDep": 0}, {"Codigo": "M1801025", "Nombre": "CASPOFUNGINA 70 MG FA", "StockMin": 0, "StockDep": 0}, {"Codigo": "M1801026", "Nombre": "CASPOFUNGINA ACETATO INYECTABLE 50MG", "StockMin": 10, "StockDep": 60}, {"Codigo": "M0714111", "Nombre": "CEFALOTINA INYECTABLE 1GR", "StockMin": 250, "StockDep": 700}, {"Codigo": "M0701146", "Nombre": "CEFAZOLINA INYECTABLE 1GR", "StockMin": 1400, "StockDep": 7400}, {"Codigo": "M1109166", "Nombre": "CEFTAZIDIMA + AVIBACTAM 2,5 GR", "StockMin": 60, "StockDep": 10}, {"Codigo": "M0724149", "Nombre": "CEFTOLOZANO TAZOBACTAM FA 1,5 gr", "StockMin": 10, "StockDep": 0}, {"Codigo": "M0717111", "Nombre": "CEFTRIAXONA INYECTABLE 1GR", "StockMin": 900, "StockDep": 5420}, {"Codigo": "M1101034", "Nombre": "CIPROFLOXACINA SOLUCION INYECTABLE 200MG-100ML", "StockMin": 2000, "StockDep": 350}, {"Codigo": "M0801136", "Nombre": "CLARITROMICINA INYECTABLE 500MG", "StockMin": 250, "StockDep": 3000}, {"Codigo": "M1109142", "Nombre": "CLINDAMICINA INYECTABLE 600MG", "StockMin": 1600, "StockDep": 0}, {"Codigo": "M2501019", "Nombre": "CLONIDINA INYECTABLE 150MG", "StockMin": 200, "StockDep": 0}, {"Codigo": "M2000043", "Nombre": "CLORHEXIDINA XILITOL COLUTORIO 0,12%-10% litro", "StockMin": 0, "StockDep": 0}, {"Codigo": "M0901111", "Nombre": "COLISTINA INYECTABLE 100MG", "StockMin": 800, "StockDep": 1175}, {"Codigo": "M1109175", "Nombre": "DAPTOMICINA 500 MG FA", "StockMin": 15, "StockDep": 23}, {"Codigo": "M2709187", "Nombre": "DEXAMETASONA INYECTABLE 4MG/ML", "StockMin": 4000, "StockDep": 22500}, {"Codigo": "M1201017", "Nombre": "DEXMEDETOMIDINA INYECTABLE 100MCG/ML-2ML", "StockMin": 1300, "StockDep": 7100}, {"Codigo": "M1210131", "Nombre": "DIAZEPAM INYECTABLE 10MG-2ML", "StockMin": 200, "StockDep": 3700}, {"Codigo": "M1601132", "Nombre": "DIFENHIDRAMINA INYECTABLE 10MG/ML 1 ml", "StockMin": 1200, "StockDep": 0}, {"Codigo": "M2501032", "Nombre": "DOBUTAMINA INYECTABLE 250MG-20ML", "StockMin": 120, "StockDep": 800}, {"Codigo": "M2501035", "Nombre": "DOPAMINA INYECTABLE 200MG-5ML", "StockMin": 100, "StockDep": 1700}, {"Codigo": "M2601029", "Nombre": "ENOXAPARINA 40MG - 0.4ML", "StockMin": 400, "StockDep": 4210}, {"Codigo": "M2615235", "Nombre": "ENOXAPARINA 60 MG - 0,6 ML", "StockMin": 350, "StockDep": 1490}, {"Codigo": "M2601031", "Nombre": "ENOXAPARINA 80MG - 0.8 ML", "StockMin": 350, "StockDep": 1200}, {"Codigo": "M1201059", "Nombre": "FENITOINA (DIFENILHIDANTOINA) INYECTABLE 100MG", "StockMin": 1000, "StockDep": 4800}, {"Codigo": "M0216124", "Nombre": "FENTANILO BASE AMPOLLAS 50MCG/ 5ML", "StockMin": 7500, "StockDep": 35400}, {"Codigo": "M3801011", "Nombre": "FLUMAZENIL 0,5 MG AMPOLLAS", "StockMin": 120, "StockDep": 0}, {"Codigo": "M3701019", "Nombre": "GAMMAGLOBULINA HUMANA (IGG) 10 GR 200 ML", "StockMin": 10, "StockDep": 69}, {"Codigo": "M3701018", "Nombre": "GAMMAGLOBULINA HUMANA 5 GR", "StockMin": 40, "StockDep": 23}, {"Codigo": "M2601053", "Nombre": "HEPARINA SODICA FCO AMPOLLA 5000UI/ML - 5 ML", "StockMin": 1800, "StockDep": 6300}, {"Codigo": "M0724115", "Nombre": "IMIPENEM-CILASTATINA AMPOLLA 500MG", "StockMin": 1000, "StockDep": 4004}, {"Codigo": "M0724151", "Nombre": "IMIPENEM-CILASTATINA-RELEBACTAM", "StockMin": 10, "StockDep": 0}, {"Codigo": "M0314130", "Nombre": "KETAMINA FCOAMPOLLA", "StockMin": 15, "StockDep": 0}, {"Codigo": "M0314153", "Nombre": "LIDOCAINA S/EPINEFRINA 1% ampollas 5 ml", "StockMin": 400, "StockDep": 3880}, {"Codigo": "M0314151", "Nombre": "LIDOCAINA S/EPINEFRINA AMPOLLAS 2%-5ML", "StockMin": 800, "StockDep": 3500}, {"Codigo": "M0314152", "Nombre": "LIDOCAINA S/EPINEFRINA FA 1% 20 ML", "StockMin": 90, "StockDep": 550}, {"Codigo": "M0314154", "Nombre": "LIDOCAINA S/EPINEFRINA FA 2%-20ML", "StockMin": 300, "StockDep": 4450}, {"Codigo": "M0308151", "Nombre": "LIDOCAINA VISCOSA 2% 50 ML", "StockMin": 90, "StockDep": 901}, {"Codigo": "M1109135", "Nombre": "LINEZOLID SACHET 600MG", "StockMin": 100, "StockDep": 910}, {"Codigo": "M1246414", "Nombre": "LORAZEPAM AMPOLLAS 4 MG", "StockMin": 750, "StockDep": 1500}, {"Codigo": "M3318145", "Nombre": "MAGNESIO SULFATO AMPOLLAS 25%", "StockMin": 500, "StockDep": 2100}, {"Codigo": "M0701173", "Nombre": "MEROPENEM FRASCO AMPOLLA 1GR", "StockMin": 1500, "StockDep": 2850}, {"Codigo": "M2310157", "Nombre": "METOCLOPRAMIDA 10 MG AMPOLLAS", "StockMin": 5500, "StockDep": 6200}, {"Codigo": "M1901016", "Nombre": "METRONIDAZOL INYECTABLE 500MG/100ML", "StockMin": 600, "StockDep": 550}, {"Codigo": "M1236111", "Nombre": "MIDAZOLAM AMPOLLAS 5MG/ML 3 ML 15 MG", "StockMin": 9000, "StockDep": 5500}, {"Codigo": "M2534252", "Nombre": "MILRINONA 10 MG FA", "StockMin": 25, "StockDep": 160}, {"Codigo": "M0209111", "Nombre": "MORFINA AMPOLLAS 1%-1ML", "StockMin": 1500, "StockDep": 700}, {"Codigo": "M2509113", "Nombre": "NITROPRUSIATO DE SODIO INYECTABLE 50MG", "StockMin": 8, "StockDep": 0}, {"Codigo": "M2501116", "Nombre": "NORADRENALINA AMPOLLAS 1MG-4ML", "StockMin": 1200, "StockDep": 3600}, {"Codigo": "M0301154", "Nombre": "PROPOFOL AMPOLLAS 10MG/-20ML", "StockMin": 1500, "StockDep": 5820}, {"Codigo": "M0301153", "Nombre": "PROPOFOL AMPOLLAS 50 ML FA", "StockMin": 200, "StockDep": 1200}, {"Codigo": "M2203112", "Nombre": "RANITIDINA AMPOLLAS 50MG", "StockMin": 5500, "StockDep": 3000}, {"Codigo": "M0200125", "Nombre": "REMIFENTANILO AMPOLLAS 5MG 10ML", "StockMin": 600, "StockDep": 1375}, {"Codigo": "M0314147", "Nombre": "ROCURONIO 10 MG FA 5 ML", "StockMin": 20, "StockDep": 90}, {"Codigo": "M4101041", "Nombre": "SUCCINICOLINA FCO AMPOLLA 500 MG-10ML", "StockMin": 0, "StockDep": 0}, {"Codigo": "M4101040", "Nombre": "SUCCINILCOLINA 100 MG FA", "StockMin": 250, "StockDep": 1100}, {"Codigo": "M0314149", "Nombre": "SUGAMMADEX 100 MG (100 MG/ML X 2 ML)", "StockMin": 10, "StockDep": 60}, {"Codigo": "M1101076", "Nombre": "TIGECICLINA AMPOLLA 50MG", "StockMin": 90, "StockDep": 0}, {"Codigo": "M1101055", "Nombre": "VANCOMICINA FRASCO AMPOLLA 1GR", "StockMin": 1500, "StockDep": 3000}, {"Codigo": "M4101008", "Nombre": "VECURONIO FCO AMPOLLA 10MG", "StockMin": 100, "StockDep": 0}, {"Codigo": "M1801028", "Nombre": "VORICONAZOL COMPRIMIDOS 200 mg", "StockMin": 180, "StockDep": 310}];
+// Índice por código para búsqueda rápida
+const CONTROL_IDX = {};
+CONTROL_LIST.forEach(c => { CONTROL_IDX[c.Codigo] = c; });
+
 const OC_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSWaSa3Jca8vrzmWvgmrgG_PDyEESLDuBBMzlmGT0Q78uPi8SB2nn4rerp06Ea7Ip9OqM9mXN01G3eo/pub?output=csv';
 let _ocData = null;
 let _ocLoaded = false;
@@ -918,6 +947,106 @@ async function loadOC(force){
     $('oc-error').style.display='block';
     $('oc-error-msg').textContent='Error: '+e.message;
   }
+}
+
+function buildPrioridades(){
+  if(!_ocData){ $('tbody-prior').innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--muted2);padding:20px">Cargá el Sheet primero para ver las prioridades</td></tr>'; return; }
+
+  // Filtrar OC pendientes del Sheet
+  const ocPend = _ocData.filter(r => r['STATUS']==='PENDIENTE');
+
+  // Cruzar con listado de control
+  const items = [];
+  CONTROL_LIST.forEach(ctrl => {
+    // Buscar en DATA (adquisiciones) para obtener ABC/XYZ y consumo
+    const dataItem = DATA_ANALISIS.find(r =>
+      r.Codigo === ctrl.Codigo && r.Tiene_OC === 'SI'
+    );
+    // Buscar OC pendiente para este código
+    const ocItem = ocPend.find(r =>
+      r['CÓDIGO'] === ctrl.Codigo || r['CODIGO'] === ctrl.Codigo
+    );
+    // Solo incluir si tiene OC pendiente en el Sheet
+    if(!ocItem) return;
+
+    const cons    = dataItem ? Number(dataItem.Consumo_Mensual||0) : 0;
+    const meses   = (cons > 0 && ctrl.StockDep > 0) ? ctrl.StockDep / cons : null;
+    const bajMin  = ctrl.StockMin > 0 && ctrl.StockDep < ctrl.StockMin;
+    const bajMes  = meses !== null && meses < 1;
+    const modMes  = meses !== null && meses >= 1 && meses < 3;
+    const abc     = dataItem ? (dataItem.Clase_ABC_Monto||'—') : '—';
+    const xyz     = dataItem ? (dataItem.Clase_XYZ||'—') : '—';
+
+    // Score de urgencia
+    let urgScore = 0;
+    if(bajMin && bajMes)   urgScore = 4;  // CRÍTICO
+    else if(bajMin || bajMes) urgScore = 3;  // URGENTE
+    else if(modMes)        urgScore = 2;  // MODERADO
+    else                   urgScore = 1;  // OK
+
+    // Score ABC
+    const abcScore = abc==='A'?3:abc==='B'?2:abc==='C'?1:0;
+
+    items.push({
+      ctrl, dataItem, ocItem,
+      meses, bajMin, bajMes, urgScore, abcScore, abc, xyz, cons
+    });
+  });
+
+  // Ordenar: urgScore desc → abcScore desc → nombre asc
+  items.sort((a,b) => b.urgScore-a.urgScore || b.abcScore-a.abcScore || a.ctrl.Nombre.localeCompare(b.ctrl.Nombre));
+
+  // KPIs
+  const nCrit = items.filter(i=>i.urgScore===4).length;
+  const nUrg  = items.filter(i=>i.urgScore===3).length;
+  const nMod  = items.filter(i=>i.urgScore===2).length;
+  const nOk   = items.filter(i=>i.urgScore===1).length;
+
+  $('kpi-prior').innerHTML =
+    kpiCard('r','Críticos', nCrit, 'Stock bajo mínimo Y < 1 mes', null)+
+    kpiCard('o','Urgentes', nUrg,  'Stock bajo mínimo O < 1 mes', null)+
+    kpiCard('y','Moderados', nMod, '1 a 3 meses de cobertura', null)+
+    kpiCard('g','Con stock OK', nOk, '> 3 meses de cobertura', null);
+
+  if(!items.length){
+    $('tbody-prior').innerHTML='<tr><td colspan="11" style="text-align:center;color:var(--muted2);padding:20px">No se encontraron medicamentos de control con OC pendiente</td></tr>';
+    return;
+  }
+
+  const urgLabel = {4:'🔴 CRÍTICO',3:'🟠 URGENTE',2:'🟡 MODERADO',1:'🟢 OK'};
+  const urgColor = {4:'var(--red)',3:'var(--orange)',2:'var(--yel)',1:'var(--green)'};
+  const urgBg    = {4:'rgba(248,81,73,.12)',3:'rgba(247,129,102,.1)',2:'rgba(227,179,65,.1)',1:'rgba(63,185,80,.08)'};
+
+  $('tbody-prior').innerHTML = items.map(it => {
+    const c = it.ctrl;
+    const o = it.ocItem;
+    const mesesTxt = it.meses===null ? '—'
+                   : it.meses < 1   ? '<span style="color:var(--red);font-weight:700">'+it.meses.toFixed(1)+' m</span>'
+                   : it.meses < 3   ? '<span style="color:var(--yel)">'+it.meses.toFixed(1)+' m</span>'
+                   : '<span style="color:var(--green)">'+it.meses.toFixed(1)+' m</span>';
+    const stockColor = it.bajMin ? 'color:var(--red);font-weight:700' : 'color:var(--tx)';
+    const abcBadge = `<span class="bdg b${it.abc}" style="font-size:10px">${it.abc}</span>`;
+    const xyzBadge = `<span class="bdg b${it.xyz}" style="font-size:10px">${it.xyz}</span>`;
+    const cantidad = o['CANTIDAD'] || '—';
+    const hasta    = o['HASTA'] ? new Date(o['HASTA']).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—';
+    const prov     = (o['RAZÓN SOCIAL']||'').length>22 ? (o['RAZÓN SOCIAL']||'').substring(0,21)+'…' : (o['RAZÓN SOCIAL']||'—');
+    const noc      = o['N°_OC'] || '—';
+
+    return `<tr style="background:${urgBg[it.urgScore]}">
+      <td style="color:${urgColor[it.urgScore]};font-weight:600;white-space:nowrap;font-size:11px">${urgLabel[it.urgScore]}</td>
+      <td style="max-width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:11px" title="${c.Nombre}">${c.Nombre}</td>
+      <td>${abcBadge}</td>
+      <td>${xyzBadge}</td>
+      <td style="color:var(--blue);font-weight:600">${noc}</td>
+      <td style="font-size:11px" title="${o['RAZÓN SOCIAL']||''}">${prov}</td>
+      <td style="${stockColor};text-align:right">${c.StockDep.toLocaleString('es-AR')}</td>
+      <td style="text-align:right;color:var(--muted)">${c.StockMin.toLocaleString('es-AR')}</td>
+      <td>${mesesTxt}</td>
+      <td style="text-align:right">${cantidad}</td>
+      <td style="font-size:11px;color:var(--muted2)">${hasta}</td>
+    </tr>`;
+  }).join('');
+  setTimeout(()=>initSortable('t-prior'), 50);
 }
 
 function buildOC(){
@@ -1008,6 +1137,7 @@ function buildOC(){
     </tr>`;
   }).join('');
   setTimeout(()=>initSortable('t-oc'),50);
+  buildPrioridades();
 }
 
 // ── Carga de stock desde archivo XLS del sistema ────────────────────────────
