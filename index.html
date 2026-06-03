@@ -1828,6 +1828,10 @@ function buildEjecucion(){
       _pctRiesgo.toFixed(1)+'% del presupuesto · '+_nDesierto+' desiertos + '+_nPreAdj+' pre-adj.',
       'Suma del monto justiprecio de los ítems clasificados como <strong>Desierto</strong> ('+fmt(_montoDes)+') o <strong>Pre-adjudicado sin OC</strong> ('+fmt(_montoPreAdj)+'). Representa el presupuesto que aún no tiene compra asegurada. No incluye los ítems Sin gestión (proveedor vacío).',
       _pctRiesgo)+
+    kpiCard('c','Órdenes de compra',
+      (() => new Set(DATA_ANALISIS.filter(r=>r.OC&&r.OC.trim()!=='').map(r=>r.OC.trim())).size)().toLocaleString('es-AR'),
+      'Números de OC distintos en el archivo',
+      'Cantidad de números de Orden de Compra únicos registrados en la col P. Un número de OC puede cubrir múltiples renglones o ítems del mismo proceso licitatorio.')+
     kpiCard('b','Relicitados adjudicados',
       totalRelicitados.toLocaleString('es-AR'),
       'Insumos declarados desiertos que obtuvieron OC',
