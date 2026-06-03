@@ -970,7 +970,7 @@ function buildPrioridades(){
     if(!ocItem) return;
 
     const cons    = dataItem ? Number(dataItem.Consumo_Mensual||0) : 0;
-    const meses   = (cons > 0 && ctrl.StockDep > 0) ? ctrl.StockDep / cons : null;
+    const meses   = cons > 0 ? ctrl.StockDep / cons : null;  // stock=0 → meses=0 (cobertura cero)
     const bajMin  = ctrl.StockMin > 0 && ctrl.StockDep < ctrl.StockMin;
     const bajMes  = meses !== null && meses < 1;
     const modMes  = meses !== null && meses >= 1 && meses < 3;
