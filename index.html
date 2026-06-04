@@ -982,6 +982,16 @@ async function loadOC(force){
       }
     });
 
+    // Log diagnóstico por año
+    const contPorAnio = {};
+    results.forEach((res,i)=>{
+      contPorAnio[anios[i]] = res.status==='fulfilled'
+        ? parseCSVSheet(res.value).length + ' filas'
+        : 'ERROR: ' + res.reason;
+    });
+    console.log('OC cargadas por año:', contPorAnio);
+    $('oc-update').textContent = 'Por año: ' + Object.entries(contPorAnio).map(([a,n])=>`${a}:${n}`).join(' | ');
+
     // Deduplicar por N°_OC + PDO_OC + RENGLÓN para evitar duplicados entre hojas
     const seen = new Set();
     _ocData = _ocData.filter(r => {
@@ -1148,8 +1158,10 @@ function buildOC(){
   const buscar  = ($('oc-buscar').value||'').toLowerCase();
 
   let rows = _ocData.filter(r=>{
+    // PDO_OC puede venir como "2024", 2024, "24" o vacío → normalizar
     const pdo = (r['PDO_OC']||'').toString().trim();
-    if(year && pdo !== year) return false;
+    const pdoNorm = pdo.length===2 ? '20'+pdo : pdo;  // "24" → "2024"
+    if(year && pdoNorm !== year) return false;
     if(serv && r['SERVICIO_SOLICITANTE']!==serv) return false;
     if(status && r['STATUS']!==status) return false;
     if(buscar){
