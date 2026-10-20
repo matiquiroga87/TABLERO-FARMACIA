@@ -13,6 +13,7 @@ Correcciones respecto a la versión anterior:
 import json, re, sys
 from pathlib import Path
 from datetime import datetime
+from zoneinfo import ZoneInfo
 import pandas as pd
 import numpy as np
 
@@ -25,7 +26,12 @@ RUBROS_CFG = [
     ('CREMAS GOTAS AEROSOLES',3,68),('DIALISIS',3,27),('RAYOS',3,33),
     ('FORMULACION Y SEDRONAR',3,32),('VARIOS',3,9),
     ('DESIERTOS',3,178),('ESTERILIZACION DESIERTOS',3,13),
+    ('SEGUNDO SEMESTRE',3,134),
 ]
+# El fin de rango (r2) es solo referencial: se recorre la hoja hasta su última
+# fila para no perder renglones agregados después (filas sin código ni
+# descripción se descartan igual).
+
 RUBRO_COL = {
     "VARIOS":                  {"consumo":4,"cm":24,"cq":17,"cj":22,"cp":12,"caa":25,"cy":23},
     "ESTERILIZACION":          {"consumo":4,"cm":25,"cq":17,"cj":23,"cp":12,"caa":26,"cy":24},
@@ -68,7 +74,7 @@ def procesar(ruta_xlsx):
         cfg  = RUBRO_COL.get(sheet_name, RUBRO_COL["DEFAULT"])
         hist = HIST_COLS.get(sheet_name, HIST_COLS["DEFAULT"])
         cm_i,cq_i,cj_i,cp_i,cons_i,caa_i,cy_i = cfg["cm"],cfg["cq"],cfg["cj"],cfg["cp"],cfg["consumo"],cfg["caa"],cfg["cy"]
-        for pi in range(r1-1, r2):
+        for pi in range(r1-1, max(r2, len(df))):
             if pi >= len(df): continue
             row = df.iloc[pi]
             desc = row[1] if pd.notna(row[1]) else None
@@ -116,15 +122,13 @@ def procesar(ruta_xlsx):
 
     # ABC por monto
     df_m = df_out[df_out["Monto_Total"]>0].sort_values("Monto_Total",ascending=False).copy()
-    df_m["Clase_ABC_Monto"] = clasificar_abc(df_m["Monto_Total"])
-    df_out = df_out.merge(df_m[["Codigo","Rubro","Descripcion","Clase_ABC_Monto"]],on=["Codigo","Rubro","Descripcion"],how="left")
-    df_out["Clase_ABC_Monto"] = df_out["Clase_ABC_Monto"].fillna("Sin monto")
+    # Asignación por índice (un merge por Codigo/Rubro/Descripcion duplicaba
+    # filas cuando el mismo ítem aparece más de una vez en la misma hoja)
+    df_out["Clase_ABC_Monto"] = clasificar_abc(df_m["Monto_Total"]).reindex(df_out.index).fillna("Sin monto")
 
     # ABC por cantidad
     df_q = df_out[df_out["Cantidad_Pedida"]>0].sort_values("Cantidad_Pedida",ascending=False).copy()
-    df_q["Clase_ABC_Cantidad"] = clasificar_abc(df_q["Cantidad_Pedida"])
-    df_out = df_out.merge(df_q[["Codigo","Rubro","Descripcion","Clase_ABC_Cantidad"]],on=["Codigo","Rubro","Descripcion"],how="left")
-    df_out["Clase_ABC_Cantidad"] = df_out["Clase_ABC_Cantidad"].fillna("Sin cant.")
+    df_out["Clase_ABC_Cantidad"] = clasificar_abc(df_q["Cantidad_Pedida"]).reindex(df_out.index).fillna("Sin cant.")
 
     df_out["Matriz_ABC_XYZ"] = df_out["Clase_ABC_Monto"] + df_out["Clase_XYZ"]
 
@@ -229,7 +233,7 @@ def generar_html(df, plantilla_html, salida_html):
     records  = df.fillna("").to_dict(orient="records")
     json_data = json.dumps(records, ensure_ascii=False, separators=(',', ':'))
     stats    = calcular_stats(df)
-    fecha    = datetime.now().strftime("%d/%m/%Y %H:%M")
+    fecha    = datetime.now(ZoneInfo("America/Argentina/Buenos_Aires")).strftime("%d/%m/%Y %H:%M")
 
     with open(plantilla_html, encoding="utf-8") as f:
         html = f.read()
